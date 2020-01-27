@@ -13,6 +13,7 @@ set(DEBUG_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/debug)
     
 add_definitions(-D__STDC_CONSTANT_MACROS)
 
+include_directories("include/")
 
 find_path( AVCODEC_INCLUDE_DIR libavcodec/avcodec.h )
 find_library( AVCODEC_LIBRARY avcodec )
@@ -40,3 +41,4 @@ set (FFMPEG_LIBRARY ${AVFORMAT_LIBRARY} ${AVDEVICE_LIBRARY} ${AVCODEC_LIBRARY} $
     pthread va m z)
 
 add_subdirectory(src)
+add_subdirectory(lib)
