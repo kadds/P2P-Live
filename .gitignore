@@ -72,3 +72,4 @@ build/
 .vscode/
 #qt
 CMakeLists.txt.user
+*.autosave
