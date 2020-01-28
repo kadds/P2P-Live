@@ -6,7 +6,7 @@ socket_t::socket_t(int fd)
 {
 }
 
-socket_t::~socket_t() {}
+socket_t::~socket_t() { close(fd); }
 
 io_result socket_t::write(socket_buffer_t &buffer)
 {
@@ -87,9 +87,9 @@ socket_addr_t socket_t::local_addr()
     socklen_t len = sizeof(sockaddr_in);
     if (getsockname(fd, (sockaddr *)&in, &len) == 0)
     {
-        return socket_addr_t(in);
+        local = in;
     }
-    throw net_param_exception("failed to get addr");
+    return local;
 }
 
 socket_addr_t socket_t::remote_addr()
@@ -98,22 +98,47 @@ socket_addr_t socket_t::remote_addr()
     socklen_t len = sizeof(sockaddr_in);
     if (getpeername(fd, (sockaddr *)&in, &len) == 0)
     {
-        return socket_addr_t(in);
+        remote = in;
     }
-    throw net_param_exception("failed to get addr");
+    return remote;
 }
 
-socket_t connect_to(socket_addr_t socket_to)
+void socket_t::add_handler(event_handler_t handler) { event_handles.push_back(handler); }
+
+void socket_t::on_event(event_context_t &context, event_type_t type)
 {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    return fd;
+    for (auto it = event_handles.begin(); it != event_handles.end();)
+    {
+        auto ret = (*it)(context, type, this);
+
+        if (ret == event_result::remove_handler)
+        {
+            it = event_handles.erase(it);
+        }
+        else
+        {
+            it++;
+        }
+    }
 }
 
-socket_t listen_from(socket_addr_t socket_in, int max_count)
+socket_t *connect_to(socket_addr_t socket_to)
 {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0)
         throw net_connect_exception("failed to start socket.");
+
+    return new socket_t(fd);
+}
+
+socket_t *listen_from(socket_addr_t socket_in, int max_count)
+{
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0)
+        throw net_connect_exception("failed to start socket.");
+
+    int opt = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt));
 
     socklen_t len = sizeof(sockaddr_in);
     auto addr = socket_in.get_raw_addr();
@@ -122,22 +147,19 @@ socket_t listen_from(socket_addr_t socket_in, int max_count)
     if (listen(fd, max_count) != 0)
         throw net_connect_exception("failed to listen address " + socket_in.to_string());
 
-    return fd;
+    return new socket_t(fd);
 }
 
-socket_t accept_from(socket_t socket)
+socket_t *accept_from(socket_t *socket)
 {
-    int fd = accept(socket.get_raw_handle(), 0, 0);
+    int fd = accept(socket->get_raw_handle(), 0, 0);
     if (fd < 0)
     {
-        int r = errno;
-        auto str = "failed to accept " + socket.local_addr().to_string();
+        auto str = "failed to accept " + socket->local_addr().to_string();
         throw net_connect_exception(str);
     }
-
-    return fd;
+    return new socket_t(fd);
 }
 
-void close_socket(socket_t socket) { close(socket.get_raw_handle()); }
-
+void close_socket(socket_t *socket) { delete socket; }
 } // namespace net

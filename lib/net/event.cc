@@ -1,133 +1,119 @@
 #include "net/event.hpp"
 #include "net/epoll.hpp"
 #include "net/select.hpp"
+#include "net/socket.hpp"
 #include <algorithm>
 
 namespace net
 {
-event_base_t::event_base_t(event_base_strategy strategy)
+event_context_t::event_context_t(event_strategy strategy)
     : strategy(strategy)
-    , is_exit(false)
+{
+}
+
+event_loop_t::event_loop_t()
+    : is_exit(false)
     , exit_code(0)
 {
-    switch (strategy)
-    {
-        case event_base_strategy::select:
-            demuxer = new event_select_demultiplexer();
-            break;
-        case event_base_strategy::epoll:
-            demuxer = new event_epoll_demultiplexer();
-            break;
-        case event_base_strategy::IOCP:
-        default:
-            throw std::invalid_argument("invalid strategy");
-    }
 }
 
-void event_base_t::add_handler(event_type type, socket_t socket, event_handler_t handler)
+void event_loop_t::add_socket(socket_t *socket) { socket_map[socket->get_raw_handle()] = socket; }
+
+void event_loop_t::remove_socket(socket_t *socket)
 {
-    {
-        std::lock_guard<std::mutex> mtx(mutex);
-        auto it = event_map.find(socket);
-        if (it == event_map.end())
-        {
-            it = event_map.insert(std::make_pair(socket, socket_events_t())).first;
-        }
-        auto &type_map = it->second;
-        auto it2 = type_map.find(type);
-        if (it2 == type_map.end())
-        {
-            it2 = type_map.insert(std::make_pair(type, std::list<event_handler_t>())).first;
-        }
-        it2->second.push_back(handler);
-        demuxer->add(socket, type);
-    }
+    socket_map.erase(socket_map.find(socket->get_raw_handle()));
+    unlink(socket, event_type::error | event_type::writable | event_type::readable);
 }
 
-void event_base_t::remove_handler(event_type type, socket_t socket, event_handler_t handler)
+event_loop_t &event_loop_t::link(socket_t *socket, event_type_t type)
 {
-    std::lock_guard<std::mutex> mtx(mutex);
-    auto it = event_map.find(socket);
-    if (it == event_map.end())
-    {
-        return;
-    }
-    auto &type_map = it->second;
-    auto it2 = type_map.find(type);
-    if (it2 == type_map.end())
-    {
-        return;
-    }
-
-    auto it3 = std::find(it2->second.begin(), it2->second.end(), handler);
-    if (it3 == it2->second.end())
-    {
-        return;
-    }
-    demuxer->remove(socket, type);
-    it2->second.erase(it3);
+    demuxer->add(socket->get_raw_handle(), type);
+    return *this;
 }
 
-void event_base_t::remove_handler(event_type type, socket_t socket)
+event_loop_t &event_loop_t::unlink(socket_t *socket, event_type_t type)
 {
-    std::lock_guard<std::mutex> mtx(mutex);
-    auto it = event_map.find(socket);
-    if (it == event_map.end())
-    {
-        return;
-    }
-    auto &type_map = it->second;
-    auto it2 = type_map.find(type);
-    if (it2 == type_map.end())
-    {
-        return;
-    }
-    demuxer->remove(socket, type);
-    type_map.erase(it2);
+    demuxer->remove(socket->get_raw_handle(), type);
+    return *this;
 }
 
-void event_base_t::remove_handler(socket_t socket)
-{
-    std::lock_guard<std::mutex> mtx(mutex);
-    auto it = event_map.find(socket);
-    if (it == event_map.end())
-    {
-        return;
-    }
-    event_map.erase(it);
-
-    demuxer->remove(socket, event_type::error);
-    demuxer->remove(socket, event_type::readable);
-    demuxer->remove(socket, event_type::writable);
-}
-
-void event_base_t::close_socket(socket_t socket) { close(socket.get_raw_handle()); }
-
-int event_base_t::run()
+int event_loop_t::run()
 {
     while (!is_exit)
     {
-        event_type type;
-        socket_t socket = demuxer->select(&type);
-        auto so_it = event_map.find(socket);
-        if (so_it == event_map.end())
-            continue;
+        event_type_t type;
+        auto handle = demuxer->select(&type);
 
-        auto type_it = so_it->second.find(type);
-        if (type_it == so_it->second.end())
+        auto socket_it = socket_map.find(handle);
+        if (socket_it == socket_map.end())
             continue;
-
-        for (auto hander : type_it->second)
-        {
-            hander(*this, event_t(type, socket));
-        }
+        auto socket = socket_it->second;
+        socket->on_event(*context, type);
     }
     return exit_code;
 }
 
-void event_base_t::exit(int code)
+void event_loop_t::exit(int code)
 {
     exit_code = code;
     is_exit = true;
+}
+
+int event_loop_t::load_factor() { return 1; }
+
+event_loop_t &event_context_t::add_socket(socket_t *socket)
+{
+    std::shared_lock<std::shared_mutex> lock(loop_mutex);
+    event_loop_t *min_load_loop = loops[0];
+    int min_fac = min_load_loop->load_factor();
+    for (auto loop : loops)
+    {
+        int fac = loop->load_factor();
+        if (fac < min_fac)
+        {
+            min_fac = fac;
+            min_load_loop = loop;
+        }
+    }
+
+    min_load_loop->add_socket(socket);
+    return *min_load_loop;
+}
+
+event_loop_t *event_context_t::remove_socket(socket_t *socket)
+{
+    std::shared_lock<std::shared_mutex> lock(loop_mutex);
+    for (auto loop : loops)
+    {
+        loop->remove_socket(socket);
+    }
+    return nullptr;
+}
+
+void event_context_t::add_event_loop(event_loop_t *loop)
+{
+    std::unique_lock<std::shared_mutex> lock(loop_mutex);
+    loop->set_context(this);
+    event_demultiplexer *demuxer = nullptr;
+    switch (strategy)
+    {
+        case event_strategy::select:
+            demuxer = new event_select_demultiplexer();
+            break;
+        case event_strategy::epoll:
+            demuxer = new event_epoll_demultiplexer();
+            break;
+        case event_strategy::IOCP:
+        default:
+            throw std::invalid_argument("invalid strategy");
+    }
+    loop->set_demuxer(demuxer);
+    loops.push_back(loop);
+}
+
+void event_context_t::remove_event_loop(event_loop_t *loop)
+{
+    std::unique_lock<std::shared_mutex> lock(loop_mutex);
+    loops.erase(std::find(loops.begin(), loops.end(), loop));
 }
 } // namespace net
