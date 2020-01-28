@@ -1,52 +1,58 @@
 #pragma once
 #include "net.hpp"
-#include "socket.hpp"
+#include <functional>
 #include <list>
 #include <mutex>
+#include <shared_mutex>
+
 #include <unordered_map>
 
 namespace net
 {
-enum event_type
+using handle_t = int;
+
+using event_type_t = unsigned int;
+namespace event_type
 {
-    readable,
-    writable,
-    error,
+enum
+{
+    readable = 1,
+    writable = 2,
+    error = 4,
+
+    on_add = 32,
+    on_remove = 64,
+
+};
 };
 
-struct event_t
-{
-    event_type type;
-    socket_t socket;
+class socket_t;
 
-    event_t(event_type type, socket_t socket)
-        : type(type)
-        , socket(socket)
+class event_context_t;
+
+enum class event_result
+{
+    ok,
+    remove_handler,
+};
+
+using event_handler_t = std::function<event_result(event_context_t &context, event_type_t type, socket_t *socket)>;
+
+struct event_handler_content_t
+{
+    event_handler_t handler;
+    bool enable;
+    event_handler_content_t(event_handler_t handler)
+        : handler(handler)
+        , enable(true)
     {
     }
 };
 
-class event_base_t;
+using socket_event_map_t = std::unordered_map<handle_t, std::list<event_handler_content_t>>;
+using socket_handle_map_t = std::unordered_map<handle_t, socket_t *>;
 
-typedef void (*event_handler_t)(event_base_t &base, event_t event);
-
-struct socket_t_cmp_t
-{
-    bool operator()(const socket_t &so1, const socket_t &so2) const
-    {
-        return so1.get_raw_handle() == so2.get_raw_handle();
-    }
-};
-
-struct socket_t_hash_t
-{
-    std::size_t operator()(const socket_t &so1) const { return so1.get_raw_handle(); }
-};
-
-typedef std::unordered_map<event_type, std::list<event_handler_t>> socket_events_t;
-typedef std::unordered_map<socket_t, socket_events_t, socket_t_hash_t, socket_t_cmp_t> socket_event_map_t;
-
-enum event_base_strategy
+enum event_strategy
 {
     select,
     epoll,
@@ -58,50 +64,65 @@ class event_demultiplexer
   public:
     /// register socket on event type
     ///
-    ///\param socket the socket to listen
+    ///\param handle the socket handle to listen
     ///\param type which event to listen. readable, writable, error.
     ///
-    virtual void add(socket_t socket, event_type type) = 0;
+    virtual void add(handle_t handle, event_type_t type) = 0;
 
-    /// listen and return a socket which happends event
+    /// listen and return a socket handle which happends event
     ///
     ///\param type a pointer to event_type. return socket event type
     ///\return socket happends event
-    virtual socket_t select(event_type *type) = 0;
+    virtual handle_t select(event_type_t *type) = 0;
 
     /// unregister socket on event type
     ///
-    ///\param socket socket
+    ///\param socket handle
     ///\param type unregister event type. readable, writable, error.
     ///
-    virtual void remove(socket_t socket, event_type type) = 0;
+    virtual void remove(handle_t handle, event_type_t type) = 0;
 };
 
-class event_base_t
+class event_loop_t
 {
     bool is_exit;
     int exit_code;
-
-    event_base_strategy strategy;
     event_demultiplexer *demuxer;
-    socket_event_map_t event_map;
-    std::mutex mutex;
+    socket_handle_map_t socket_map;
+    friend class event_context_t;
+    event_context_t *context;
+
+  private:
+    void add_socket(socket_t *socket_t);
+    void remove_socket(socket_t *socket_t);
+    void set_demuxer(event_demultiplexer *demuxer) { this->demuxer = demuxer; }
+    void set_context(event_context_t *context) { this->context = context; }
 
   public:
-    event_base_t(event_base_strategy strategy);
-    void add_handler(event_type type, socket_t socket, event_handler_t handler);
-    void remove_handler(event_type type, socket_t socket, event_handler_t handler);
-    void remove_handler(event_type type, socket_t socket);
-    void remove_handler(socket_t socket);
-
-    void close_socket(socket_t socket);
-
+    event_loop_t();
     int run();
     void exit(int code);
+    int load_factor();
+
+    event_loop_t &link(socket_t *socket_t, event_type_t type);
+    event_loop_t &unlink(socket_t *socket_t, event_type_t type);
 };
 
-class event_sub_base_t : public event_base_t
+class event_context_t
 {
+    event_strategy strategy;
+    std::shared_mutex loop_mutex;
+    std::vector<event_loop_t *> loops;
+    socket_handle_map_t map;
+    std::shared_mutex map_mutex;
+
+  public:
+    event_context_t(event_strategy strategy);
+    event_loop_t &add_socket(socket_t *socket_t);
+    event_loop_t *remove_socket(socket_t *socket_t);
+
+    void add_event_loop(event_loop_t *loop);
+    void remove_event_loop(event_loop_t *loop);
 };
 
 } // namespace net

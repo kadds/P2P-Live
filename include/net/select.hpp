@@ -1,5 +1,6 @@
 #pragma once
 #include "event.hpp"
+#include <unordered_map>
 
 namespace net
 {
@@ -11,9 +12,9 @@ class event_select_demultiplexer : public event_demultiplexer
 
   public:
     event_select_demultiplexer();
-    void add(socket_t socket, event_type type) override;
-    socket_t select(event_type *type) override;
-    void remove(socket_t socket, event_type type) override;
+    void add(handle_t handle, event_type_t type) override;
+    handle_t select(event_type_t *type) override;
+    void remove(handle_t handle, event_type_t type) override;
 };
 
 } // namespace net

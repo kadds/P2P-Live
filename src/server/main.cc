@@ -1,60 +1,92 @@
 #include "net/event.hpp"
 #include "net/net.hpp"
+#include "net/socket.hpp"
 #include <iostream>
 
-int server_fd;
+net::socket_t *server_socket;
+net::event_context_t *app_context;
 
-void on_client_readable(net::event_base_t &base, net::event_t event);
-void on_client_writable(net::event_base_t &base, net::event_t event);
-void on_client_error(net::event_base_t &base, net::event_t event);
+net::event_result on_event(net::event_context_t &ctx, net::event_type_t type, net::socket_t *socket);
 
-void on_client_exit(net::event_base_t &base, net::event_t event)
+net::event_result on_client_readable(net::event_context_t &, net::event_type_t, net::socket_t *);
+net::event_result on_client_writable(net::event_context_t &, net::event_type_t, net::socket_t *);
+net::event_result on_client_error(net::event_context_t &, net::event_type_t, net::socket_t *);
+
+net::event_result on_client_exit(net::event_context_t &ctx, net::event_type_t type, net::socket_t *socket)
 {
-    std::cout << "client exit " << event.socket.remote_addr().to_string() << "\n";
+    std::cout << "client exit " << socket->remote_addr().to_string() << "\n";
+    ctx.remove_socket(socket);
+    return net::event_result::ok;
 }
 
-void on_client_join(net::event_base_t &base, net::event_t event)
+net::event_result on_client_join(net::event_context_t &ctx, net::event_type_t type, net::socket_t *socket)
 {
-    auto client_socket = net::accept_from(event.socket);
-    std::cout << "client join " << client_socket.remote_addr().to_string() << "\n";
-    base.add_handler(net::event_type::readable, client_socket, on_client_readable);
-    base.add_handler(net::event_type::error, client_socket, on_client_error);
+    auto client_socket = net::accept_from(socket);
+    std::cout << "client join " << client_socket->remote_addr().to_string() << "\n";
+    client_socket->add_handler(on_event);
+    ctx.add_socket(client_socket)
+        .link(client_socket, net::event_type::readable)
+        .link(client_socket, net::event_type::error);
+    return net::event_result::ok;
 }
 
-void on_client_readable(net::event_base_t &base, net::event_t event)
+net::event_result on_client_readable(net::event_context_t &ctx, net::event_type_t type, net::socket_t *socket)
 {
-    if (event.socket.get_raw_handle() == server_fd)
+    if (socket == server_socket)
     {
-        on_client_join(base, event);
-        return;
+        return on_client_join(ctx, type, socket);
     }
     net::socket_buffer_t buffer(512);
-    if (net::io_result::closed == event.socket.read(buffer))
+    if (net::io_result::closed == socket->read(buffer))
     {
-        on_client_exit(base, event);
-        base.close_socket(event.socket);
-        return;
+        return on_client_exit(ctx, type, socket);
     }
     net::socket_buffer_t echo("echo: ");
 
-    event.socket.write(echo);
-    event.socket.write(buffer);
+    socket->write(echo);
+    socket->write(buffer);
+    return net::event_result::ok;
 }
 
-void on_client_writable(net::event_base_t &base, net::event_t event) {}
+net::event_result on_client_writable(net::event_context_t &, net::event_type_t, net::socket_t *)
+{
+    return net::event_result::ok;
+}
 
-void on_client_error(net::event_base_t &base, net::event_t event) { std::cout << "error socket\n"; }
+net::event_result on_event(net::event_context_t &ctx, net::event_type_t type, net::socket_t *socket)
+{
+    switch (type)
+    {
+        case net::event_type::writable:
+            return on_client_writable(ctx, type, socket);
+        case net::event_type::readable:
+            return on_client_readable(ctx, type, socket);
+        case net::event_type::error:
+            return on_client_error(ctx, type, socket);
+        default:
+            return net::event_result::remove_handler;
+    }
+}
+
+net::event_result on_client_error(net::event_context_t &ctx, net::event_type_t type, net::socket_t *socket)
+{
+    std::cout << "error socket\n";
+    return net::event_result::ok;
+}
 
 int main()
 {
     net::init_lib();
-    auto server_socket = net::listen_from(net::socket_addr_t("0.0.0.0", net::command_port), 1000);
-    server_fd = server_socket.get_raw_handle();
-    net::event_base_t event_base(net::event_base_strategy::select);
-    event_base.add_handler(net::event_type::readable, server_socket, on_client_readable);
-    event_base.add_handler(net::event_type::error, server_socket, on_client_error);
+    net::event_context_t context(net::event_strategy::epoll);
+    app_context = &context;
 
-    int code = event_base.run();
+    server_socket = net::listen_from(net::socket_addr_t("0.0.0.0", net::command_port), 1000);
+    server_socket->add_handler(on_event);
+    net::event_loop_t looper;
+    app_context->add_event_loop(&looper);
+    app_context->add_socket(server_socket).link(server_socket, net::event_type::readable | net::event_type::error);
+
+    int code = looper.run();
     std::cout << "exit code " << code << "\n";
     return code;
 }

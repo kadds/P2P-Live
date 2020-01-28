@@ -8,6 +8,7 @@ class socket_addr_t
     sockaddr_in so_addr;
 
   public:
+    socket_addr_t();
     socket_addr_t(sockaddr_in addr);
     socket_addr_t(std::string addr, int port);
     std::string to_string();
