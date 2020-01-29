@@ -4,14 +4,13 @@
 #include <list>
 #include <mutex>
 #include <shared_mutex>
-
 #include <unordered_map>
 
 namespace net
 {
 using handle_t = int;
 
-using event_type_t = unsigned int;
+using event_type_t = unsigned long;
 namespace event_type
 {
 enum
@@ -20,8 +19,9 @@ enum
     writable = 2,
     error = 4,
 
-    on_add = 32,
-    on_remove = 64,
+    /// extend event
+    add = 32,
+    remove = 64,
 
 };
 };
@@ -48,9 +48,11 @@ struct event_handler_content_t
     {
     }
 };
+class event_loop_t;
 
 using socket_event_map_t = std::unordered_map<handle_t, std::list<event_handler_content_t>>;
 using socket_handle_map_t = std::unordered_map<handle_t, socket_t *>;
+using socket_event_loop_map_t = std::unordered_map<handle_t, event_loop_t *>;
 
 enum event_strategy
 {
@@ -113,7 +115,7 @@ class event_context_t
     event_strategy strategy;
     std::shared_mutex loop_mutex;
     std::vector<event_loop_t *> loops;
-    socket_handle_map_t map;
+    socket_event_loop_map_t map;
     std::shared_mutex map_mutex;
 
   public:

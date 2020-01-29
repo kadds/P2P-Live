@@ -10,7 +10,7 @@ enum io_result
 {
     ok,
     in_process,
-    continu,
+    cont,
     closed,
     timeout,
     failed,
@@ -27,11 +27,11 @@ class socket_t
     socket_t(int fd);
     ~socket_t();
 
-    io_result write(socket_buffer_t &buffer);
-    io_result read(socket_buffer_t &buffer);
+    io_result write_async(socket_buffer_t &buffer);
+    io_result read_async(socket_buffer_t &buffer);
 
-    void write_async(socket_buffer_t &buffer);
-    void read_async(socket_buffer_t &buffer);
+    void awrite(socket_buffer_t &buffer);
+    void aread(socket_buffer_t &buffer);
 
     io_result write_pack(socket_buffer_t &buffer, socket_addr_t target);
     io_result read_pack(socket_buffer_t &buffer, socket_addr_t target);

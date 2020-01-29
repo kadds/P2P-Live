@@ -1,4 +1,6 @@
 #include "net/socket.hpp"
+#include <fcntl.h>
+
 namespace net
 {
 socket_t::socket_t(int fd)
@@ -8,30 +10,91 @@ socket_t::socket_t(int fd)
 
 socket_t::~socket_t() { close(fd); }
 
-io_result socket_t::write(socket_buffer_t &buffer)
+io_result socket_t::write_async(socket_buffer_t &buffer)
 {
-    auto len = send(fd, buffer.get(), buffer.get_data_len(), 0);
-    if (len == -1)
+    unsigned long buffer_offset = 0;
+    unsigned long buffer_size = buffer.get_data_len();
+    if (buffer_size == 0)
+        return io_result::ok;
+    byte *buf = buffer.get();
+    while (buffer_size > 0)
     {
-        return io_result::closed;
+        auto len = send(fd, buf + buffer_offset, buffer_size, MSG_DONTWAIT);
+
+        if (len == 0)
+        {
+            // send blocked
+            return io_result::cont;
+        }
+        else if (len < 0)
+        {
+            int e = errno;
+            if (errno == EINTR)
+            {
+                len = 0;
+            }
+            else if (errno == EPIPE)
+            {
+                return io_result::closed; // EOF PIPE
+            }
+            else
+            {
+                throw net_io_exception("send message failed!");
+            }
+        }
+
+        buffer_size -= len;
+        buffer_offset += len;
     }
     return io_result::ok;
 }
 
-io_result socket_t::read(socket_buffer_t &buffer)
+io_result socket_t::read_async(socket_buffer_t &buffer)
 {
-    auto len = recv(fd, buffer.get(), buffer.get_buffer_len(), 0);
-    if (len == -1)
+    unsigned long buffer_offset = 0;
+    unsigned long buffer_size = buffer.get_data_len();
+    byte *buf = buffer.get();
+    if (buffer_size == 0)
+        return io_result::ok;
+    ssize_t len;
+    while (buffer_size > 0)
     {
-        return io_result::closed;
+        len = recv(fd, buf + buffer_offset, buffer_size, MSG_DONTWAIT);
+        if (len == 0) // EOF
+        {
+            return io_result::closed;
+        }
+        else if (len < 0)
+        {
+            if (errno == EINTR)
+            {
+                len = 0;
+            }
+            else if (errno == EAGAIN)
+            {
+                buffer.set_data_len(buffer_offset);
+                // can't read any data
+                return io_result::cont;
+            }
+            else if (errno == ECONNREFUSED)
+            {
+                throw net_connect_exception("recv message failed!");
+            }
+            else
+            {
+                throw net_io_exception("recv message failed!");
+            }
+        }
+        buffer_size -= len;
+        buffer_offset += len;
     }
-    else if (len == 0)
-    {
-        return io_result::closed;
-    }
-    buffer.set_data_len(len);
+    buffer.set_data_len(buffer_offset);
     return io_result::ok;
 }
+
+void socket_t::awrite(socket_buffer_t &buffer) {}
+
+void socket_t::aread(socket_buffer_t &buffer) {}
 
 io_result socket_t::write_pack(socket_buffer_t &buffer, socket_addr_t target)
 {
@@ -127,7 +190,12 @@ socket_t *connect_to(socket_addr_t socket_to)
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0)
         throw net_connect_exception("failed to start socket.");
+    socklen_t len = sizeof(sockaddr_in);
+    auto addr = socket_to.get_raw_addr();
+    connect(fd, (sockaddr *)&addr, len);
 
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
     return new socket_t(fd);
 }
 
@@ -147,18 +215,31 @@ socket_t *listen_from(socket_addr_t socket_in, int max_count)
     if (listen(fd, max_count) != 0)
         throw net_connect_exception("failed to listen address " + socket_in.to_string());
 
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
     return new socket_t(fd);
 }
 
 socket_t *accept_from(socket_t *socket)
 {
-    int fd = accept(socket->get_raw_handle(), 0, 0);
-    if (fd < 0)
+    while (1)
     {
-        auto str = "failed to accept " + socket->local_addr().to_string();
-        throw net_connect_exception(str);
-    }
-    return new socket_t(fd);
+        int fd = accept(socket->get_raw_handle(), 0, 0);
+        if (fd < 0)
+        {
+            if (errno == EAGAIN)
+            {
+                // wait
+
+                continue;
+            }
+            throw net_connect_exception("failed to accept " + socket->local_addr().to_string());
+        }
+        int flags = fcntl(fd, F_GETFL, 0);
+        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+        return new socket_t(fd);
+    };
 }
 
 void close_socket(socket_t *socket) { delete socket; }
