@@ -6,6 +6,8 @@ class socket_buffer_t
 {
     byte *ptr;
     long data_len;
+    long current_fill_len;
+
     long buffer_len;
 
   public:
@@ -19,6 +21,8 @@ class socket_buffer_t
     byte *get() { return ptr; }
     long get_data_len() { return data_len; }
     long get_buffer_len() { return buffer_len; }
+    long get_fill_len(){return current_fill_len;}
     void set_data_len(long len) { data_len = len; }
+    void set_fill_len(long len) {current_fill_len = len;}
 };
 }; // namespace net

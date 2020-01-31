@@ -7,6 +7,7 @@ socket_buffer_t::socket_buffer_t(std::string str)
     : ptr(new byte[str.size()])
     , buffer_len(str.size())
     , data_len(str.size())
+    , current_fill_len(0)
 {
     memccpy(ptr, str.c_str(), str.size(), str.size());
 }
@@ -15,6 +16,7 @@ socket_buffer_t::socket_buffer_t(long len)
     : ptr(new byte[len])
     , buffer_len(len)
     , data_len(0)
+    , current_fill_len(0)
 {
 }
 

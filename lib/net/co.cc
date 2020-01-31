@@ -3,5 +3,17 @@
 
 namespace net::co
 {
-void create() {}
+ctx::fiber &&co_wrapper(ctx::fiber &&sink, coroutine_t *co)
+{
+    co->context = std::move(sink);
+    co_cur->func();
+    return std::move(co->context);
+}
+ctx::fiber &&co_reschedule_wrapper(ctx::fiber &&sink, coroutine_t *co, std::function<void()> func)
+{
+    co->context = std::move(sink);
+    func();
+    return std::move(co->context);
+}
+
 }; // namespace net::co

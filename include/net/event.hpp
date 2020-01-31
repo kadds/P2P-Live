@@ -22,6 +22,7 @@ enum
     /// extend event
     add = 32,
     remove = 64,
+    tick = 128,
 
 };
 };
@@ -83,6 +84,8 @@ class event_demultiplexer
     ///\param type unregister event type. readable, writable, error.
     ///
     virtual void remove(handle_t handle, event_type_t type) = 0;
+
+    virtual ~event_demultiplexer(){};
 };
 
 class event_loop_t
@@ -99,6 +102,8 @@ class event_loop_t
     void remove_socket(socket_t *socket_t);
     void set_demuxer(event_demultiplexer *demuxer) { this->demuxer = demuxer; }
     void set_context(event_context_t *context) { this->context = context; }
+
+    event_demultiplexer *get_demuxer() const { return demuxer; }
 
   public:
     event_loop_t();

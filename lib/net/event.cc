@@ -1,4 +1,5 @@
 #include "net/event.hpp"
+#include "net/co.hpp"
 #include "net/epoll.hpp"
 #include "net/select.hpp"
 #include "net/socket.hpp"
@@ -17,7 +18,11 @@ event_loop_t::event_loop_t()
 {
 }
 
-void event_loop_t::add_socket(socket_t *socket) { socket_map[socket->get_raw_handle()] = socket; }
+void event_loop_t::add_socket(socket_t *socket)
+{
+    socket_map[socket->get_raw_handle()] = socket;
+    socket->loop = this;
+}
 
 void event_loop_t::remove_socket(socket_t *socket)
 {
@@ -46,10 +51,14 @@ int event_loop_t::run()
     {
         event_type_t type;
         auto handle = demuxer->select(&type);
+        if (handle == 0)
+            continue;
 
         auto socket_it = socket_map.find(handle);
         if (socket_it == socket_map.end())
+        {
             continue;
+        }
         auto socket = socket_it->second;
         socket->on_event(*context, type);
     }
@@ -132,6 +141,9 @@ void event_context_t::remove_event_loop(event_loop_t *loop)
     std::unique_lock<std::shared_mutex> lock(loop_mutex);
     auto it = std::find(loops.begin(), loops.end(), loop);
     if (it != loops.end())
+    {
+        delete loop->get_demuxer();
         loops.erase(it);
+    }
 }
 } // namespace net
