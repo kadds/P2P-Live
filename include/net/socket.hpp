@@ -35,7 +35,7 @@ class socket_t
     io_result read_async(socket_buffer_t &buffer);
 
     io_result write_pack(socket_buffer_t &buffer, socket_addr_t target);
-    io_result read_pack(socket_buffer_t &buffer, socket_addr_t target);
+    io_result read_pack(socket_buffer_t &buffer, socket_addr_t &target);
 
   public:
     socket_t(int fd);
@@ -46,8 +46,8 @@ class socket_t
     co::async_result_t<io_result> awrite(socket_buffer_t &buffer);
     co::async_result_t<io_result> aread(socket_buffer_t &buffer);
 
-    co::async_result_t<io_result> awrite_pack(socket_buffer_t &buffer, socket_addr_t target);
-    co::async_result_t<io_result> aread_pack(socket_buffer_t &buffer, socket_addr_t target);
+    co::async_result_t<io_result> awrite_to(socket_buffer_t &buffer, socket_addr_t target);
+    co::async_result_t<io_result> aread_from(socket_buffer_t &buffer, socket_addr_t &target);
 
     socket_addr_t local_addr();
     socket_addr_t remote_addr();
@@ -68,10 +68,20 @@ class socket_t
     void startup_coroutine(co::coroutine_t *co);
 };
 
+co::async_result_t<io_result> socket_awrite(socket_t *socket, socket_buffer_t &buffer);
+co::async_result_t<io_result> socket_aread(socket_t *socket, socket_buffer_t &buffer);
+
+co::async_result_t<io_result> socket_awrite_to(socket_t *socket, socket_buffer_t &buffer, socket_addr_t target);
+co::async_result_t<io_result> socket_aread_from(socket_t *socket, socket_buffer_t &buffer, socket_addr_t &target);
+
 socket_t *new_tcp_socket();
 socket_t *new_udp_socket();
 
+socket_t *reuse_socket(socket_t *, bool reuse);
+
 co::async_result_t<io_result> connect_to(socket_t *socket, socket_addr_t socket_to_addr, int timeout_ms);
+co::async_result_t<io_result> connect_udp(socket_t *socket, socket_addr_t socket_to_addr, int timeout_ms);
+
 socket_t *bind_at(socket_t *socket, socket_addr_t socket_to_addr);
 socket_t *listen_from(socket_t *socket, int max_count);
 co::async_result_t<socket_t *> accept_from(socket_t *in);

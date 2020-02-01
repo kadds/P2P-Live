@@ -25,5 +25,6 @@ enum io_result
     closed,
     timeout,
     failed,
+    buffer_too_small,
 };
 } // namespace net

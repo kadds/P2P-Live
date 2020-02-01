@@ -14,6 +14,8 @@ struct except_buffer_helper_t
 
     except_buffer_helper_t length(long len);
     except_buffer_helper_t origin_length();
+
+    socket_buffer_t &operator()() { return *buf; }
 };
 class socket_buffer_t
 {

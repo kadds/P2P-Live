@@ -140,49 +140,78 @@ co::async_result_t<io_result> socket_t::aread(socket_buffer_t &buffer)
 io_result socket_t::write_pack(socket_buffer_t &buffer, socket_addr_t target)
 {
     auto addr = target.get_raw_addr();
-    while (1)
+    unsigned long buffer_offset = buffer.get_process_length();
+    unsigned long buffer_size = buffer.get_data_length() - buffer.get_process_length();
+    byte *buf = buffer.get();
+    if (sendto(fd, buffer.get(), buffer.get_data_length(), MSG_DONTWAIT, (sockaddr *)&addr, (socklen_t)sizeof(addr)) ==
+        -1)
     {
-        if (sendto(fd, buffer.get(), buffer.get_data_length(), 0, (sockaddr *)&addr, (socklen_t)sizeof(addr)) == -1)
+        if (errno == EAGAIN)
         {
-            if (errno == EAGAIN)
-            {
-                continue;
-            }
-            else if (errno == EACCES)
-            {
-                throw net_io_exception("error send to " + target.to_string() + ". permission denied.");
-            }
-            else if (errno == EPIPE)
-            {
-                return io_result::closed;
-            }
-            return io_result::failed;
+            return io_result::cont;
         }
-        return io_result::ok;
+        else if (errno == EACCES)
+        {
+            throw net_io_exception("error send to " + target.to_string() + ". permission denied.");
+        }
+        else if (errno == EPIPE)
+        {
+            return io_result::closed;
+        }
+        return io_result::failed;
     }
+    return io_result::ok;
 }
 
-io_result socket_t::read_pack(socket_buffer_t &buffer, socket_addr_t target)
+io_result socket_t::read_pack(socket_buffer_t &buffer, socket_addr_t &target)
 {
     auto addr = target.get_raw_addr();
-    socklen_t len = sizeof(addr);
-    while (1)
+    socklen_t slen = sizeof(addr);
+    auto len = recvfrom(fd, buffer.get(), buffer.get_data_length(), MSG_DONTWAIT, (sockaddr *)&addr, &slen);
+    if (len == 0)
     {
-        if (recvfrom(fd, buffer.get(), buffer.get_data_length(), 0, (sockaddr *)&addr, &len) == -1)
-        {
-            if (errno == EAGAIN)
-            {
-                continue;
-            }
-            else if (errno == ECONNREFUSED)
-            {
-                return io_result::closed;
-            }
-            return io_result::failed;
-        }
-        buffer.set_process_length(len);
-        return io_result::ok;
+        return io_result::closed;
     }
+    else if (len < 0)
+    {
+        if (errno == EINTR)
+        {
+            len = 0;
+        }
+        if (errno == EAGAIN)
+        {
+            return io_result::cont;
+        }
+        else if (errno == ECONNREFUSED)
+        {
+            return io_result::closed;
+        }
+        return io_result::failed;
+    }
+    buffer.set_process_length(len);
+    return io_result::ok;
+}
+
+co::async_result_t<io_result> socket_t::awrite_to(socket_buffer_t &buffer, socket_addr_t target)
+{
+    auto ret = write_pack(buffer, target);
+    if (ret == io_result::cont)
+    {
+        add_event(event_type::writable);
+        return co::async_result_t<io_result>();
+    }
+    return ret;
+}
+
+co::async_result_t<io_result> socket_t::aread_from(socket_buffer_t &buffer, socket_addr_t &target)
+{
+    auto ret = read_pack(buffer, target);
+    if (ret == io_result::cont)
+    {
+        add_event(event_type::readable);
+        return co::async_result_t<io_result>();
+    }
+    return ret;
 }
 
 socket_addr_t socket_t::local_addr()
@@ -233,8 +262,30 @@ void socket_t::remove_event(event_type_t type)
 
 void socket_t::startup_coroutine(co::coroutine_t *co)
 {
+    if (!co)
+        throw std::logic_error("coroutine has been set.");
     this->co = co;
     co->resume();
+}
+
+co::async_result_t<io_result> socket_awrite(socket_t *socket, socket_buffer_t &buffer)
+{
+    return socket->awrite(buffer);
+}
+
+co::async_result_t<io_result> socket_aread(socket_t *socket, socket_buffer_t &buffer)
+{
+    // async read wrapper
+    return socket->aread(buffer);
+}
+
+co::async_result_t<io_result> socket_awrite_to(socket_t *socket, socket_buffer_t &buffer, socket_addr_t target)
+{
+    return socket->awrite_to(buffer, target);
+}
+co::async_result_t<io_result> socket_aread_from(socket_t *socket, socket_buffer_t &buffer, socket_addr_t &target)
+{
+    return socket->aread_from(buffer, target);
 }
 
 socket_t *new_tcp_socket()
@@ -244,9 +295,6 @@ socket_t *new_tcp_socket()
         throw net_connect_exception("failed to start socket.", connection_state::no_resource);
     int flags = fcntl(fd, F_GETFL, 0);
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
-    int opt = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt));
 
     auto socket = new socket_t(fd);
     return socket;
@@ -259,10 +307,15 @@ socket_t *new_udp_socket()
         throw net_connect_exception("failed to start socket.", connection_state::no_resource);
     int flags = fcntl(fd, F_GETFL, 0);
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-    int opt = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt));
 
     auto socket = new socket_t(fd);
+    return socket;
+}
+
+socket_t *reuse_socket(socket_t *socket, bool reuse)
+{
+    int opt = reuse;
+    setsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt));
     return socket;
 }
 
@@ -296,6 +349,37 @@ co::async_result_t<io_result> connect_to(socket_t *socket, socket_addr_t socket_
         return co::async_result_t<io_result>(io_result::failed);
     }
     socket->is_connection_closed = false;
+    return co::async_result_t<io_result>(io_result::ok);
+}
+
+co::async_result_t<io_result> connect_udp(socket_t *socket, socket_addr_t socket_to_addr, int timeout_ms)
+{
+    socklen_t len = sizeof(sockaddr_in);
+    auto addr = socket_to_addr.get_raw_addr();
+
+    if (connect(socket->get_raw_handle(), (sockaddr *)&addr, len) == 0)
+    {
+        socket->remove_event(event_type::readable | event_type::writable);
+        return co::async_result_t<io_result>(io_result::ok);
+    }
+    if (errno == EINPROGRESS)
+    {
+        socket->add_event(event_type::readable | event_type::writable);
+        return co::async_result_t<io_result>();
+    }
+    else if (errno == EISCONN)
+    {
+        socket->remove_event(event_type::readable | event_type::writable);
+        return co::async_result_t<io_result>(io_result::ok);
+    }
+    socket->remove_event(event_type::readable | event_type::writable);
+    socklen_t len2 = sizeof(sockaddr_in);
+    sockaddr_in addr2;
+    int er = errno;
+    if (getpeername(socket->get_raw_handle(), (sockaddr *)&addr2, &len2) < 0)
+    {
+        return co::async_result_t<io_result>(io_result::failed);
+    }
     return co::async_result_t<io_result>(io_result::ok);
 }
 
