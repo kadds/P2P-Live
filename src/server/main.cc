@@ -22,10 +22,9 @@ void thread_main()
             net::socket_buffer_t buf("hi, world");
             while (1)
             {
-                buf.set_fill_len(0);
+                buf.expect().origin_length();
                 net::co::await(std::bind(&net::socket_t::awrite, socket, std::placeholders::_1), buf);
-                read_data.set_fill_len(0);
-                read_data.set_data_len(1);
+                read_data.expect().origin_length();
                 net::co::await(std::bind(&net::socket_t::aread, socket, std::placeholders::_1), read_data);
             }
         })
@@ -63,11 +62,10 @@ int main()
 
             while (1)
             {
-                buffer.set_fill_len(0);
-                buffer.set_data_len(20);
+                buffer.expect().origin_length();
                 net::co::await(std::bind(&net::socket_t::aread, socket, std::placeholders::_1), buffer);
-                buffer.set_fill_len(0);
-                echo.set_fill_len(0);
+                buffer.expect().origin_length();
+                echo.expect().origin_length();
                 net::co::await(std::bind(&net::socket_t::awrite, socket, std::placeholders::_1), echo);
                 net::co::await(std::bind(&net::socket_t::awrite, socket, std::placeholders::_1), buffer);
             }
@@ -75,7 +73,7 @@ int main()
         .at_client_exit([](net::tcp::server_t &server, net::socket_t *socket) {
             std::cout << "client exit " << socket->remote_addr().to_string() << "\n";
         });
-    server.listen(context, net::socket_addr_t("0.0.0.0", net::command_port), 1000);
+    server.listen(context, net::socket_addr_t("127.0.0.1", net::command_port), 1000);
 
     return looper.run();
 }
