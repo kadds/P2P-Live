@@ -1,6 +1,7 @@
 #include "net/event.hpp"
 #include "net/net.hpp"
 #include "net/socket.hpp"
+#include <glog/logging.h>
 #include <iostream>
 
 net::socket_t *server_socket;
@@ -74,11 +75,24 @@ net::event_result on_client_error(net::event_context_t &ctx, net::event_type_t t
     return net::event_result::ok;
 }
 
-int main()
+void atexit_func() { google::ShutdownGoogleLogging(); }
+
+int main(int argc, char **argv)
 {
+    google::InitGoogleLogging(argv[0]);
+    google::SetLogDestination(google::GLOG_FATAL, "./server.log");
+    google::SetLogDestination(google::GLOG_ERROR, "./server.log");
+    google::SetLogDestination(google::GLOG_INFO, "./server.log");
+    google::SetLogDestination(google::GLOG_WARNING, "./server.log");
+    google::SetStderrLogging(google::GLOG_INFO);
+
+    atexit(atexit_func);
+
     net::init_lib();
+    LOG(INFO) << "init libnet";
     net::event_context_t context(net::event_strategy::epoll);
     app_context = &context;
+    LOG(INFO) << "create application event context";
 
     server_socket = net::listen_from(net::socket_addr_t("0.0.0.0", net::command_port), 1000);
     server_socket->add_handler(on_event);
@@ -86,7 +100,8 @@ int main()
     app_context->add_event_loop(&looper);
     app_context->add_socket(server_socket).link(server_socket, net::event_type::readable | net::event_type::error);
 
+    LOG(INFO) << "run event loop";
     int code = looper.run();
-    std::cout << "exit code " << code << "\n";
+    LOG(INFO) << "normal exit server code " << code;
     return code;
 }
