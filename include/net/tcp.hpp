@@ -26,7 +26,7 @@ class server_t
 
   public:
     server_t();
-    void listen(event_context_t &context, socket_addr_t address, int max_client);
+    void listen(event_context_t &context, socket_addr_t address, int max_client, bool reuse_addr = false);
     server_t &at_client_join(server_handler_t handler);
     server_t &at_client_exit(server_handler_t handler);
     server_t &at_client_connection_error(server_handler_t handler);

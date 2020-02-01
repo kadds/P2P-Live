@@ -2,11 +2,13 @@
 #include "net/socket.hpp"
 namespace net::udp
 {
-socket_t *server_t::bind(event_context_t &context, socket_addr_t addr)
+socket_t *server_t::bind(event_context_t &context, socket_addr_t addr, bool reuse_port)
 {
     this->context = &context;
     socket = new_udp_socket();
     context.add_socket(socket);
+    if (reuse_port)
+        reuse_port_socket(socket, true);
     bind_at(socket, addr);
     return socket;
 }

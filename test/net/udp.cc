@@ -11,7 +11,6 @@ TEST(UPDPackageTest, UPDTestInput)
     using namespace net;
     std::string test_data = "test string";
     socket_addr_t test_addr("127.0.0.1", 2224);
-    init_lib();
     udp::server_t server;
     event_context_t ctx(event_strategy::epoll);
     event_loop_t loop;
@@ -32,7 +31,7 @@ TEST(UPDPackageTest, UPDTestInput)
     }));
 
     udp::client_t client;
-    client.connect(ctx, test_addr, true);
+    client.connect(ctx, test_addr, false);
     client.get_socket()->startup_coroutine(co::coroutine_t::create([&client, &test_data, &test_addr]() {
         auto socket = client.get_socket();
         socket_buffer_t buffer(test_data);

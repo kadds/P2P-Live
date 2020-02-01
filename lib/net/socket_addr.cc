@@ -10,6 +10,14 @@ socket_addr_t::socket_addr_t()
     so_addr.sin_zero[0] = 1;
 }
 
+socket_addr_t::socket_addr_t(int port)
+    : so_addr({})
+{
+    so_addr.sin_family = AF_INET;
+    so_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    so_addr.sin_port = htons(port);
+}
+
 socket_addr_t::socket_addr_t(sockaddr_in addr)
     : so_addr(addr)
 {

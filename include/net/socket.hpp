@@ -77,7 +77,8 @@ co::async_result_t<io_result> socket_aread_from(socket_t *socket, socket_buffer_
 socket_t *new_tcp_socket();
 socket_t *new_udp_socket();
 
-socket_t *reuse_socket(socket_t *, bool reuse);
+socket_t *reuse_addr_socket(socket_t *socket, bool reuse);
+socket_t *reuse_port_socket(socket_t *socket, bool reuse);
 
 co::async_result_t<io_result> connect_to(socket_t *socket, socket_addr_t socket_to_addr, int timeout_ms);
 co::async_result_t<io_result> connect_udp(socket_t *socket, socket_addr_t socket_to_addr, int timeout_ms);

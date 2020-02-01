@@ -42,10 +42,13 @@ void server_t::wait_client()
     }
 }
 
-void server_t::listen(event_context_t &context, socket_addr_t address, int max_client)
+void server_t::listen(event_context_t &context, socket_addr_t address, int max_client, bool reuse_addr)
 {
     this->context = &context;
     server_socket = new_tcp_socket();
+    if (reuse_addr)
+        reuse_addr_socket(server_socket, true);
+
     listen_from(bind_at(server_socket, address), max_client);
 
     context.add_socket(server_socket).link(server_socket, net::event_type::readable);

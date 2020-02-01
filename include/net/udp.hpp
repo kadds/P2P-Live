@@ -21,7 +21,7 @@ class server_t
 
   public:
     socket_t *get_socket() const { return socket; }
-    socket_t *bind(event_context_t &context, socket_addr_t addr);
+    socket_t *bind(event_context_t &context, socket_addr_t addr, bool reuse_port = false);
 
     ///\brief configure udp server create a new coroutine for each client
     void listen();

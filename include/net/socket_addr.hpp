@@ -9,6 +9,8 @@ class socket_addr_t
 
   public:
     socket_addr_t();
+    /// init address (any:port)
+    socket_addr_t(int port);
     socket_addr_t(sockaddr_in addr);
     socket_addr_t(std::string addr, int port);
     std::string to_string();

@@ -312,10 +312,17 @@ socket_t *new_udp_socket()
     return socket;
 }
 
-socket_t *reuse_socket(socket_t *socket, bool reuse)
+socket_t *reuse_addr_socket(socket_t *socket, bool reuse)
 {
     int opt = reuse;
     setsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt));
+    return socket;
+}
+
+socket_t *reuse_port_socket(socket_t *socket, bool reuse)
+{
+    int opt = reuse;
+    setsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_REUSEPORT, (char *)&opt, sizeof(opt));
     return socket;
 }
 

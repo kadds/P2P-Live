@@ -11,7 +11,6 @@ TEST(TCPTest, TCPTestInput)
     using namespace net;
     std::string test_data = "test string";
     socket_addr_t test_addr("127.0.0.1", 2222);
-    init_lib();
     tcp::server_t server;
     event_context_t ctx(event_strategy::epoll);
     event_loop_t loop;
@@ -27,7 +26,7 @@ TEST(TCPTest, TCPTestInput)
         buffer.expect().origin_length();
         co::await(std::bind(&socket_t::awrite, socket, std::placeholders::_1), buffer);
     });
-    server.listen(ctx, test_addr, 1);
+    server.listen(ctx, test_addr, 1, true);
 
     tcp::client_t client;
     client
