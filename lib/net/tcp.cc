@@ -15,6 +15,8 @@ server_t::server_t()
 {
 }
 
+server_t::~server_t() { close_server(); }
+
 void server_t::client_main(socket_t *socket)
 {
     context->add_socket(socket);
@@ -58,15 +60,43 @@ void server_t::listen(event_context_t &context, socket_addr_t address, int max_c
 
 void server_t::exit_client(socket_t *client)
 {
-    if (client == server_socket)
+    assert(client != server_socket);
+
+    if (!client)
         return;
 
     exit_handler(*this, client);
+
     context->remove_socket(client);
-    co::coroutine_t::yield([client]() { close_socket(client); });
+    if (co::coroutine_t::in_coroutine(client->get_coroutine()))
+    {
+        co::coroutine_t::yield([client]() { close_socket(client); });
+    }
+    else
+    {
+        close_socket(client);
+    }
 }
 
-void server_t::close_server() { close_socket(server_socket); }
+void server_t::close_server()
+{
+    if (!server_socket)
+        return;
+
+    context->remove_socket(server_socket);
+    if (co::coroutine_t::in_coroutine(server_socket->get_coroutine()))
+    {
+        co::coroutine_t::yield([this]() {
+            close_socket(server_socket);
+            server_socket = nullptr;
+        });
+    }
+    else
+    {
+        close_socket(server_socket);
+        server_socket = nullptr;
+    }
+}
 
 server_t &server_t::at_client_join(server_handler_t handler)
 {
@@ -92,6 +122,8 @@ client_t::client_t()
     , error_handler(none_func_c)
 {
 }
+
+client_t::~client_t() { close(); }
 
 void client_t::wait_server(socket_addr_t address)
 {
@@ -147,9 +179,23 @@ client_t &client_t::at_server_connection_error(client_handler_t handler)
 
 void client_t::close()
 {
+    if (!socket)
+        return;
+
     exit_handler(*this, socket);
     context->remove_socket(socket);
-    co::coroutine_t::yield([this]() { close_socket(socket); });
+    if (co::coroutine_t::in_coroutine(socket->get_coroutine()))
+    {
+        co::coroutine_t::yield([this]() {
+            close_socket(socket);
+            socket = nullptr;
+        });
+    }
+    else
+    {
+        close_socket(socket);
+        socket = nullptr;
+    }
 }
 
 } // namespace net::tcp

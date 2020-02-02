@@ -66,6 +66,7 @@ class socket_t
     event_loop_t &get_event_loop() { return *loop; }
 
     void startup_coroutine(co::coroutine_t *co);
+    co::coroutine_t *get_coroutine() const { return co; }
 };
 
 co::async_result_t<io_result> socket_awrite(socket_t *socket, socket_buffer_t &buffer);

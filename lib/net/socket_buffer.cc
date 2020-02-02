@@ -34,9 +34,60 @@ socket_buffer_t::socket_buffer_t(long len)
 {
 }
 
+socket_buffer_t::socket_buffer_t(socket_buffer_t &&buffer)
+{
+    this->ptr = buffer.ptr;
+    this->current_process = buffer.current_process;
+    this->data_len = buffer.data_len;
+    this->buffer_len = buffer.buffer_len;
+
+    buffer.ptr = nullptr;
+    buffer.current_process = 0;
+    buffer.data_len = 0;
+    buffer.buffer_len = 0;
+}
+
+socket_buffer_t &socket_buffer_t::operator=(socket_buffer_t &&buffer)
+{
+    if (ptr)
+        delete[] ptr;
+    this->ptr = buffer.ptr;
+    this->current_process = buffer.current_process;
+    this->data_len = buffer.data_len;
+    this->buffer_len = buffer.buffer_len;
+
+    buffer.ptr = nullptr;
+    buffer.current_process = 0;
+    buffer.data_len = 0;
+    buffer.buffer_len = 0;
+    return *this;
+}
+
 socket_buffer_t::~socket_buffer_t()
 {
-    if (ptr != nullptr)
+    if (ptr)
         delete[] ptr;
 }
+
+long socket_buffer_t::write_string(const std::string &str)
+{
+    long len = str.size();
+    if (len > buffer_len)
+        len = buffer_len;
+
+    memccpy(ptr, str.c_str(), len, len);
+    return len;
+}
+
+std::string socket_buffer_t::to_string() const
+{
+    std::string str;
+    str.resize(data_len);
+    for (long i = 0; i < data_len; i++)
+    {
+        str[i] = *((char *)ptr + i);
+    }
+    return str;
+}
+
 } // namespace net

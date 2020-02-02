@@ -41,6 +41,7 @@ io_result socket_t::write_async(socket_buffer_t &buffer)
             }
             else if (errno == EPIPE)
             {
+                buffer.end_process();
                 return io_result::closed; // EOF PIPE
             }
             else
@@ -53,6 +54,7 @@ io_result socket_t::write_async(socket_buffer_t &buffer)
         buffer_offset += len;
     }
     buffer.set_process_length(buffer_offset);
+    buffer.end_process();
     return io_result::ok;
 }
 
@@ -67,6 +69,7 @@ io_result socket_t::read_async(socket_buffer_t &buffer)
         len = recv(fd, buf + buffer_offset, buffer_size, MSG_DONTWAIT);
         if (len == 0) // EOF
         {
+            buffer.end_process();
             return io_result::closed;
         }
         else if (len < 0)
@@ -94,6 +97,7 @@ io_result socket_t::read_async(socket_buffer_t &buffer)
         buffer_offset += len;
     }
     buffer.set_process_length(buffer_offset);
+    buffer.end_process();
     return io_result::ok;
 }
 
@@ -143,8 +147,13 @@ io_result socket_t::write_pack(socket_buffer_t &buffer, socket_addr_t target)
     unsigned long buffer_offset = buffer.get_process_length();
     unsigned long buffer_size = buffer.get_data_length() - buffer.get_process_length();
     byte *buf = buffer.get();
-    if (sendto(fd, buffer.get(), buffer.get_data_length(), MSG_DONTWAIT, (sockaddr *)&addr, (socklen_t)sizeof(addr)) ==
-        -1)
+    auto len =
+        sendto(fd, buffer.get(), buffer.get_data_length(), MSG_DONTWAIT, (sockaddr *)&addr, (socklen_t)sizeof(addr));
+    if (len == 0)
+    {
+        return io_result::closed;
+    }
+    else if (len == -1)
     {
         if (errno == EAGAIN)
         {
@@ -160,6 +169,8 @@ io_result socket_t::write_pack(socket_buffer_t &buffer, socket_addr_t target)
         }
         return io_result::failed;
     }
+    buffer.set_process_length(len);
+    buffer.end_process();
     return io_result::ok;
 }
 
@@ -189,6 +200,8 @@ io_result socket_t::read_pack(socket_buffer_t &buffer, socket_addr_t &target)
         return io_result::failed;
     }
     buffer.set_process_length(len);
+    buffer.end_process();
+    target = addr;
     return io_result::ok;
 }
 
@@ -262,7 +275,7 @@ void socket_t::remove_event(event_type_t type)
 
 void socket_t::startup_coroutine(co::coroutine_t *co)
 {
-    if (!co)
+    if (this->co)
         throw std::logic_error("coroutine has been set.");
     this->co = co;
     co->resume();

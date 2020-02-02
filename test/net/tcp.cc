@@ -5,42 +5,41 @@
 #include "net/socket_buffer.hpp"
 #include <functional>
 #include <gtest/gtest.h>
-
-TEST(TCPTest, TCPTestInput)
+using namespace net;
+static std::string test_data = "test string";
+TEST(TCPTest, TCPTestServerClient)
 {
-    using namespace net;
-    std::string test_data = "test string";
     socket_addr_t test_addr("127.0.0.1", 2222);
-    tcp::server_t server;
     event_context_t ctx(event_strategy::epoll);
     event_loop_t loop;
     ctx.add_event_loop(&loop);
+    tcp::server_t server;
 
-    server.at_client_join([&test_data](tcp::server_t &s, socket_t *socket) {
+    server.at_client_join([](tcp::server_t &s, socket_t *socket) {
         socket_buffer_t buffer(test_data.size());
         buffer.expect().origin_length();
-        co::await(std::bind(&socket_t::aread, socket, std::placeholders::_1), buffer);
-        std::string str((char *)buffer.get(), buffer.get_buffer_length());
+        GTEST_ASSERT_EQ(co::await(socket_aread, socket, buffer), io_result::ok);
 
-        GTEST_ASSERT_EQ((const char *)buffer.get(), test_data);
+        GTEST_ASSERT_EQ(buffer.to_string(), test_data);
         buffer.expect().origin_length();
-        co::await(std::bind(&socket_t::awrite, socket, std::placeholders::_1), buffer);
+        GTEST_ASSERT_EQ(co::await(socket_awrite, socket, buffer), io_result::ok);
     });
     server.listen(ctx, test_addr, 1, true);
 
     tcp::client_t client;
     client
-        .at_server_connect([&test_data](tcp::client_t &c, socket_t *socket) {
+        .at_server_connect([](tcp::client_t &c, socket_t *socket) {
             socket_buffer_t buffer(test_data);
             buffer.expect().origin_length();
-            co::await(std::bind(&socket_t::awrite, socket, std::placeholders::_1), buffer);
+            GTEST_ASSERT_EQ(co::await(socket_awrite, socket, buffer), io_result::ok);
             buffer.expect().origin_length();
-            co::await(std::bind(&socket_t::aread, socket, std::placeholders::_1), buffer);
-            GTEST_ASSERT_EQ((const char *)buffer.get(), test_data);
+            GTEST_ASSERT_EQ(co::await(socket_aread, socket, buffer), io_result::ok);
+            GTEST_ASSERT_EQ(buffer.to_string(), test_data);
         })
         .at_server_disconnect([&loop](tcp::client_t &c, socket_t *socket) { loop.exit(0); });
 
     client.connect(ctx, test_addr);
 
     loop.run();
+    server.close_server();
 }

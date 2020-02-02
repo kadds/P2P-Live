@@ -28,9 +28,10 @@ class socket_buffer_t
   public:
     socket_buffer_t(std::string str);
     socket_buffer_t(long len);
+    socket_buffer_t(socket_buffer_t &&buffer);
     socket_buffer_t(const socket_buffer_t &) = delete;
     socket_buffer_t &operator=(const socket_buffer_t &) = delete;
-
+    socket_buffer_t &operator=(socket_buffer_t &&buffer);
     ~socket_buffer_t();
 
     byte *get() const { return ptr; }
@@ -39,8 +40,12 @@ class socket_buffer_t
     long get_process_length() const { return current_process; }
 
     void set_process_length(long len) { current_process = len; }
+    void end_process() { data_len = current_process; }
 
     except_buffer_helper_t expect() { return except_buffer_helper_t(this); }
+
+    long write_string(const std::string &str);
+    std::string to_string() const;
 };
 
 }; // namespace net

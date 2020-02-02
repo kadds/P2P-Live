@@ -69,15 +69,17 @@ class coroutine_t
 
     static coroutine_t *current() { return co_cur; }
 
+    static bool in_main_coroutine() { return co_cur == nullptr; }
+
+    static bool in_coroutine(coroutine_t *co) { return co_cur == co; }
+
     static void remove(coroutine_t *c) { delete c; }
 
     // switch to this
     void resume()
     {
-        if (co_cur)
-        {
-            prev = co_cur;
-        }
+        prev = co_cur;
+
         co_cur = this;
         context = std::move(context).resume();
     }
@@ -89,6 +91,7 @@ class coroutine_t
         {
             co_cur = cur->prev;
             cur->context = std::move(cur->context).resume();
+            return;
         }
         else
         {
@@ -104,6 +107,7 @@ class coroutine_t
             co_cur = cur->prev;
             cur->context =
                 std::move(cur->context).resume_with(std::bind(co_reschedule_wrapper, std::placeholders::_1, cur, func));
+            return;
         }
         else
         {

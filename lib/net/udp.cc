@@ -13,29 +13,29 @@ socket_t *server_t::bind(event_context_t &context, socket_addr_t addr, bool reus
     return socket;
 }
 
-server_t &server_t::at_client_join(handler_t handler)
+server_t::~server_t() { close(); }
+
+void server_t::close()
 {
-    join_handler = handler;
-    return *this;
+    if (!socket)
+        return;
+
+    context->remove_socket(socket);
+    if (co::coroutine_t::in_coroutine(socket->get_coroutine()))
+    {
+        co::coroutine_t::yield([this]() {
+            close_socket(socket);
+            socket = nullptr;
+        });
+    }
+    else
+    {
+        close_socket(socket);
+        socket = nullptr;
+    }
 }
 
-server_t &server_t::at_client_exit(handler_t handler)
-{
-    exit_handler = handler;
-    return *this;
-}
-
-server_t &server_t::at_client_error(handler_t handler)
-{
-    error_handler = handler;
-    return *this;
-}
-
-void server_t::exit_client(client_t &client) { client.close(); }
-
-void server_t::close() {}
-
-void client_t::co_main() {}
+client_t::~client_t() { close(); }
 
 void client_t::connect(event_context_t &context, socket_addr_t addr, bool remote_address_bind_to_socket)
 {
@@ -53,8 +53,74 @@ socket_addr_t client_t::get_address() const { return connect_addr; }
 
 void client_t::close()
 {
+    if (!socket)
+        return;
+
     context->remove_socket(socket);
-    co::coroutine_t::yield([this]() { close_socket(socket); });
+    if (co::coroutine_t::in_coroutine(socket->get_coroutine()))
+    {
+        co::coroutine_t::yield([this]() {
+            close_socket(socket);
+            socket = nullptr;
+        });
+    }
+    else
+    {
+        close_socket(socket);
+        socket = nullptr;
+    }
+}
+
+void connectable_server_t::co_main(msg_recv_handler_t handler, int max_message_size)
+{
+    while (1)
+    {
+        socket_buffer_t buffer(max_message_size);
+        buffer.expect().origin_length();
+        socket_addr_t addr;
+        co::await(socket_aread_from, socket, buffer, addr);
+        handler(*this, std::move(buffer), addr);
+    }
+}
+
+void connectable_server_t::listen_message_recv(msg_recv_handler_t handler, int max_message_size)
+{
+    socket->startup_coroutine(
+        co::coroutine_t::create(std::bind(&connectable_server_t::co_main, this, handler, max_message_size)));
+}
+
+socket_t *connectable_server_t::bind(event_context_t &context, socket_addr_t addr)
+{
+    this->context = &context;
+    socket = new_udp_socket();
+    context.add_socket(socket);
+    reuse_port_socket(socket, true);
+    bind_at(socket, addr);
+    return socket;
+}
+
+void connectable_server_t::exit_client(client_t &client) { client.close(); }
+
+connectable_server_t::~connectable_server_t() { close(); }
+
+void connectable_server_t::close()
+{
+    if (!socket)
+        return;
+
+    context->remove_socket(socket);
+    if (co::coroutine_t::in_coroutine(socket->get_coroutine()))
+    {
+        co::coroutine_t::yield([this]() {
+            close_socket(socket);
+            socket = nullptr;
+        });
+    }
+    else
+    {
+        close_socket(socket);
+        socket = nullptr;
+    }
 }
 
 } // namespace net::udp
