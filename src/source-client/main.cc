@@ -7,6 +7,7 @@ extern "C" {
 }
 #include "main-window.hpp"
 #include <QtWidgets>
+#include <glog/logging.h>
 
 #include <iostream>
 
@@ -22,16 +23,24 @@ void OpenMp4(){
         std::cout<<"success"<<std::endl;
     else{
         char *errorInfo;
-        av_strerror(re, errorInfo, sizeof(errorInfo)); //提取错误信息,打印退出
+        av_strerror(re, errorInfo, sizeof(errorInfo));
         std::cout << " Error: " << errorInfo ;
     }
 }*/
+void atexit_func() { google::ShutdownGoogleLogging(); }
+
 int main(int argc, char *argv[])
 {
+    google::InitGoogleLogging(argv[0]);
+    google::SetLogDestination(google::GLOG_FATAL, "./source-client.log");
+    google::SetLogDestination(google::GLOG_ERROR, "./source-client.log");
+    google::SetLogDestination(google::GLOG_INFO, "./source-client.log");
+    google::SetLogDestination(google::GLOG_WARNING, "./source-client.log");
+    google::SetStderrLogging(google::GLOG_INFO);
+    atexit(atexit_func);
 
-    QApplication a(argc, argv);
-    MainWindow w;
-    w.show();
-
-    return a.exec();
+    QApplication app(argc, argv);
+    MainWindow mainWindow;
+    mainWindow.show();
+    return app.exec();
 }

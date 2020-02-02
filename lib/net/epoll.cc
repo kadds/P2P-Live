@@ -1,8 +1,18 @@
 #include "net/epoll.hpp"
+#include "net/net_exception.hpp"
 #include <sys/epoll.h>
 namespace net
 {
-event_epoll_demultiplexer::event_epoll_demultiplexer() { fd = ::epoll_create(100); }
+event_epoll_demultiplexer::event_epoll_demultiplexer()
+{
+    fd = ::epoll_create(100);
+    if (fd <= 0)
+    {
+        throw net_param_exception("epoll create failed!");
+    }
+}
+
+event_epoll_demultiplexer::~event_epoll_demultiplexer() { close(fd); }
 
 void event_epoll_demultiplexer::add(handle_t handle, event_type_t type)
 {
@@ -23,7 +33,11 @@ void event_epoll_demultiplexer::add(handle_t handle, event_type_t type)
 handle_t event_epoll_demultiplexer::select(event_type_t *type)
 {
     epoll_event ev;
-    ::epoll_wait(fd, &ev, 1, -1);
+    int c = ::epoll_wait(fd, &ev, 1, -1);
+    if (c <= 0)
+    {
+        return 0;
+    }
     int fd = 0;
     if (ev.events & EPOLLIN)
     {

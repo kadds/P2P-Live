@@ -17,5 +17,14 @@ inline constexpr int p2p_port = 1238;
 inline constexpr int command_port = 1237;
 
 void init_lib();
-
+enum io_result
+{
+    ok,
+    in_process,
+    cont,
+    closed,
+    timeout,
+    failed,
+    buffer_too_small,
+};
 } // namespace net

@@ -9,6 +9,8 @@ event_select_demultiplexer::event_select_demultiplexer()
     FD_ZERO(&error_set);
 }
 
+event_select_demultiplexer::~event_select_demultiplexer() {}
+
 void event_select_demultiplexer::add(handle_t handle, event_type_t type)
 {
     if (type & event_type::readable)
