@@ -1,78 +1,44 @@
 #include "net/event.hpp"
 #include "net/net.hpp"
 #include "net/socket.hpp"
+#include "net/tcp.hpp"
+#include "net/udp.hpp"
 #include <glog/logging.h>
 #include <iostream>
+#include <thread>
 
-net::socket_t *server_socket;
 net::event_context_t *app_context;
 
-net::event_result on_event(net::event_context_t &ctx, net::event_type_t type, net::socket_t *socket);
-
-net::event_result on_client_readable(net::event_context_t &, net::event_type_t, net::socket_t *);
-net::event_result on_client_writable(net::event_context_t &, net::event_type_t, net::socket_t *);
-net::event_result on_client_error(net::event_context_t &, net::event_type_t, net::socket_t *);
-
-net::event_result on_client_exit(net::event_context_t &ctx, net::event_type_t type, net::socket_t *socket)
+void thread_main()
 {
-    std::cout << "client exit " << socket->remote_addr().to_string() << "\n";
-    ctx.remove_socket(socket);
-    return net::event_result::ok;
-}
+    net::event_context_t context(net::event_strategy::epoll);
+    net::event_loop_t looper;
+    context.add_event_loop(&looper);
+    net::tcp::client_t client;
+    client
+        .at_server_connect([](net::tcp::client_t &client, net::socket_t *socket) {
+            std::cout << "server connection ok. " << client.get_connect_addr().to_string() << std::endl;
+            net::socket_buffer_t read_data(100);
 
-net::event_result on_client_join(net::event_context_t &ctx, net::event_type_t type, net::socket_t *socket)
-{
-    auto client_socket = net::accept_from(socket);
-    std::cout << "client join " << client_socket->remote_addr().to_string() << "\n";
-    client_socket->add_handler(on_event);
-    ctx.add_socket(client_socket)
-        .link(client_socket, net::event_type::readable)
-        .link(client_socket, net::event_type::error);
-    return net::event_result::ok;
-}
+            net::socket_buffer_t buf("hi, world");
+            while (1)
+            {
+                buf.expect().origin_length();
+                net::co::await(std::bind(&net::socket_t::awrite, socket, std::placeholders::_1), buf);
+                read_data.expect().origin_length();
+                net::co::await(std::bind(&net::socket_t::aread, socket, std::placeholders::_1), read_data);
+            }
+        })
+        .at_server_connection_error([](net::tcp::client_t &client, net::socket_t *socket) {
+            std::cerr << "server connection failed! to " << client.get_connect_addr().to_string() << std::endl;
+        })
+        .at_server_disconnect([](net::tcp::client_t &client, net::socket_t *socket) {
+            std::cout << "server connection closed! " << client.get_connect_addr().to_string() << std::endl;
+        });
 
-net::event_result on_client_readable(net::event_context_t &ctx, net::event_type_t type, net::socket_t *socket)
-{
-    if (socket == server_socket)
-    {
-        return on_client_join(ctx, type, socket);
-    }
-    net::socket_buffer_t buffer(512);
-    if (net::io_result::closed == socket->read(buffer))
-    {
-        return on_client_exit(ctx, type, socket);
-    }
-    net::socket_buffer_t echo("echo: ");
+    client.connect(context, net::socket_addr_t("127.0.0.1", 1233));
 
-    socket->write(echo);
-    socket->write(buffer);
-    return net::event_result::ok;
-}
-
-net::event_result on_client_writable(net::event_context_t &, net::event_type_t, net::socket_t *)
-{
-    return net::event_result::ok;
-}
-
-net::event_result on_event(net::event_context_t &ctx, net::event_type_t type, net::socket_t *socket)
-{
-    switch (type)
-    {
-        case net::event_type::writable:
-            return on_client_writable(ctx, type, socket);
-        case net::event_type::readable:
-            return on_client_readable(ctx, type, socket);
-        case net::event_type::error:
-            return on_client_error(ctx, type, socket);
-        default:
-            return net::event_result::remove_handler;
-    }
-}
-
-net::event_result on_client_error(net::event_context_t &ctx, net::event_type_t type, net::socket_t *socket)
-{
-    std::cout << "error socket\n";
-    return net::event_result::ok;
+    looper.run();
 }
 
 void atexit_func() { google::ShutdownGoogleLogging(); }
@@ -94,14 +60,34 @@ int main(int argc, char **argv)
     app_context = &context;
     LOG(INFO) << "create application event context";
 
-    server_socket = net::listen_from(net::socket_addr_t("0.0.0.0", net::command_port), 1000);
-    server_socket->add_handler(on_event);
     net::event_loop_t looper;
     app_context->add_event_loop(&looper);
-    app_context->add_socket(server_socket).link(server_socket, net::event_type::readable | net::event_type::error);
 
+    std::thread thd(thread_main);
+    thd.detach();
+
+    net::tcp::server_t server;
+
+    server
+        .at_client_join([](net::tcp::server_t &server, net::socket_t *socket) {
+            std::cout << "client join " << socket->remote_addr().to_string() << "\n";
+            net::socket_buffer_t buffer(20);
+            net::socket_buffer_t echo("echo:");
+
+            while (1)
+            {
+                buffer.expect().origin_length();
+                net::co::await(std::bind(&net::socket_t::aread, socket, std::placeholders::_1), buffer);
+                buffer.expect().origin_length();
+                echo.expect().origin_length();
+                net::co::await(std::bind(&net::socket_t::awrite, socket, std::placeholders::_1), echo);
+                net::co::await(std::bind(&net::socket_t::awrite, socket, std::placeholders::_1), buffer);
+            }
+        })
+        .at_client_exit([](net::tcp::server_t &server, net::socket_t *socket) {
+            std::cout << "client exit " << socket->remote_addr().to_string() << "\n";
+        });
+    server.listen(context, net::socket_addr_t("127.0.0.1", net::command_port), 1000);
     LOG(INFO) << "run event loop";
-    int code = looper.run();
-    LOG(INFO) << "normal exit server code " << code;
-    return code;
+    return looper.run();
 }

@@ -42,3 +42,4 @@ set (FFMPEG_LIBRARY ${AVFORMAT_LIBRARY} ${AVDEVICE_LIBRARY} ${AVCODEC_LIBRARY} $
 
 add_subdirectory(src)
 add_subdirectory(lib)
+add_subdirectory(test)
