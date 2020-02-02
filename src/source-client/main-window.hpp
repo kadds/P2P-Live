@@ -7,6 +7,7 @@ extern "C" {
 #include<libavformat/avformat.h>
 #include<libavutil/avutil.h>
 #include<libavutil/time.h>
+#include<SDL2/SDL.h>
 }
 using namespace std;
 
@@ -25,7 +26,8 @@ class MainWindow : public QMainWindow
     int InInit(char* in_url,AVFormatContext *&in_avfc);
     int OutInit(char* out_url,AVFormatContext *&out_avfc);
     int ErrorExit(int errorNum);
-
+    int SDL();
+    //void MainWindow::Run();
     ~MainWindow();
 
   private:
