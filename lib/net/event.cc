@@ -4,6 +4,7 @@
 #include "net/select.hpp"
 #include "net/socket.hpp"
 #include <algorithm>
+#include <iostream>
 
 namespace net
 {
@@ -15,6 +16,14 @@ event_context_t::event_context_t(event_strategy strategy)
 event_loop_t::event_loop_t()
     : is_exit(false)
     , exit_code(0)
+{
+    time_manager = create_time_manager();
+}
+
+event_loop_t::event_loop_t(std::unique_ptr<time_manager_t> time_manager)
+    : is_exit(false)
+    , exit_code(0)
+    , time_manager(std::move(time_manager))
 {
 }
 
@@ -47,20 +56,31 @@ event_loop_t &event_loop_t::unlink(socket_t *socket, event_type_t type)
 
 int event_loop_t::run()
 {
+    event_type_t type;
     while (!is_exit)
     {
-        event_type_t type;
-        auto handle = demuxer->select(&type);
-        if (handle == 0)
-            continue;
-
-        auto socket_it = socket_map.find(handle);
-        if (socket_it == socket_map.end())
+        microsecond_t cur_time = get_current_time();
+        auto target_time = time_manager->next_tick_timepoint();
+        if (cur_time >= target_time)
         {
-            continue;
+            time_manager->tick();
         }
-        auto socket = socket_it->second;
-        socket->on_event(*context, type);
+
+        microsecond_t timeout = time_manager->next_tick_timepoint() - get_current_time();
+        if (timeout < 0)
+            timeout = 0;
+        // time_wheel->get_tick_opportunely(timeval.tv_usec);
+
+        auto handle = demuxer->select(&type, &timeout);
+        if (handle != 0)
+        {
+            auto socket_it = socket_map.find(handle);
+            if (socket_it != socket_map.end())
+            {
+                auto socket = socket_it->second;
+                socket->on_event(*context, type);
+            }
+        }
     }
     return exit_code;
 }
@@ -115,6 +135,8 @@ event_loop_t *event_context_t::remove_socket(socket_t *socket)
     return loop;
 }
 
+void event_loop_t::add_timer(timer_t timer) { time_manager->insert(timer); }
+
 void event_context_t::add_event_loop(event_loop_t *loop)
 {
     std::unique_lock<std::shared_mutex> lock(loop_mutex);
@@ -146,4 +168,5 @@ void event_context_t::remove_event_loop(event_loop_t *loop)
         loops.erase(it);
     }
 }
+
 } // namespace net
