@@ -1,10 +1,7 @@
 name: Build
 
-on: 
+on:
   push:
-    branches: 
-      - master
-      - release/*
 
 jobs:
   build:
