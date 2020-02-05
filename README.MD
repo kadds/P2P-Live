@@ -1,5 +1,8 @@
 # A P2P-based online live broadcast system
-![GPL-3.0](https://img.shields.io/badge/License-GPL-green)
+![GPL-3.0](https://img.shields.io/badge/License-GPL-green)  
+![build](https://github.com/kadds/P2P-Live/workflows/Build/badge.svg)
+![Test](https://github.com/kadds/P2P-Live/workflows/Test/badge.svg)
+![lint](https://github.com/kadds/P2P-Live/workflows/Lint/badge.svg)
 
 ## Projects
 * **client**             *src/client*  

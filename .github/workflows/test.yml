@@ -5,11 +5,11 @@ on:
     branches: 
       - master
       - release/*
-      
+
 jobs:
   test:
-    needs: build
     runs-on:  ubuntu-latest
+    needs: build
     steps:
       - name: test
         run: build/bin/net-test
