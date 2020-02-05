@@ -7,6 +7,7 @@ extern "C" {
 #include<libavformat/avformat.h>
 #include<libavutil/avutil.h>
 #include<libavutil/time.h>
+#include<libswscale/swscale.h>
 #include<SDL2/SDL.h>
 }
 using namespace std;
@@ -26,8 +27,11 @@ class MainWindow : public QMainWindow
     int InInit(char* in_url,AVFormatContext *&in_avfc);
     int OutInit(char* out_url,AVFormatContext *&out_avfc);
     int ErrorExit(int errorNum);
+    void show_dshow_device();
+    int demux(char* pInputFile,char* pOutputVideoFile,char* pOutputAudioFile);
+    int RGBToYUV(int width, int height);
     int SDL();
-    //void MainWindow::Run();
+    
     ~MainWindow();
 
   private:
