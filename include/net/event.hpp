@@ -112,6 +112,9 @@ class event_loop_t
   public:
     event_loop_t();
     event_loop_t(std::unique_ptr<time_manager_t> time_manager);
+    ~event_loop_t();
+    event_loop_t(const event_loop_t &) = delete;
+    event_loop_t &operator=(const event_loop_t &) = delete;
 
     int run();
     void exit(int code);
@@ -119,7 +122,10 @@ class event_loop_t
 
     event_loop_t &link(socket_t *socket_t, event_type_t type);
     event_loop_t &unlink(socket_t *socket_t, event_type_t type);
-    void add_timer(timer_t timer);
+    timer_id add_timer(timer_t timer);
+    void remove_timer(timer_t timer, timer_id);
+
+    static event_loop_t &current();
 };
 
 class event_context_t

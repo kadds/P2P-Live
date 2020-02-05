@@ -13,11 +13,14 @@ event_context_t::event_context_t(event_strategy strategy)
 {
 }
 
+thread_local event_loop_t *thread_in_loop;
+
 event_loop_t::event_loop_t()
     : is_exit(false)
     , exit_code(0)
 {
     time_manager = create_time_manager();
+    thread_in_loop = this;
 }
 
 event_loop_t::event_loop_t(std::unique_ptr<time_manager_t> time_manager)
@@ -25,7 +28,10 @@ event_loop_t::event_loop_t(std::unique_ptr<time_manager_t> time_manager)
     , exit_code(0)
     , time_manager(std::move(time_manager))
 {
+    thread_in_loop = this;
 }
+
+event_loop_t::~event_loop_t() { thread_in_loop = nullptr; }
 
 void event_loop_t::add_socket(socket_t *socket)
 {
@@ -69,7 +75,6 @@ int event_loop_t::run()
         microsecond_t timeout = time_manager->next_tick_timepoint() - get_current_time();
         if (timeout < 0)
             timeout = 0;
-        // time_wheel->get_tick_opportunely(timeval.tv_usec);
 
         auto handle = demuxer->select(&type, &timeout);
         if (handle != 0)
@@ -92,6 +97,8 @@ void event_loop_t::exit(int code)
 }
 
 int event_loop_t::load_factor() { return socket_map.size(); }
+
+static event_loop_t &current() { return *thread_in_loop; }
 
 event_loop_t &event_context_t::add_socket(socket_t *socket)
 {
@@ -135,7 +142,9 @@ event_loop_t *event_context_t::remove_socket(socket_t *socket)
     return loop;
 }
 
-void event_loop_t::add_timer(timer_t timer) { time_manager->insert(timer); }
+timer_id event_loop_t::add_timer(timer_t timer) { return time_manager->insert(timer); }
+
+void event_loop_t::remove_timer(timer_t timer, timer_id id) { time_manager->cancel(timer, id); }
 
 void event_context_t::add_event_loop(event_loop_t *loop)
 {

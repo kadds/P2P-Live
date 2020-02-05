@@ -4,6 +4,8 @@
 
 namespace net
 {
+timer_t make_timer(microsecond_t span, callback_t callback) { return timer_t(span + get_current_time(), callback); }
+
 std::unique_ptr<time_manager_t> create_time_manager(microsecond_t precision)
 {
     std::unique_ptr<time_manager_t> time_wheel = std::make_unique<time_manager_t>();
@@ -17,25 +19,50 @@ void time_manager_t::tick()
     auto us = get_current_time();
     while (!queue.empty())
     {
-        auto timer = queue.top();
-        if (timer.timepoint > us)
+        auto timers = queue.top();
+        if (timers->timepoint > us)
         {
             break;
         }
         queue.pop();
-        timer.callback();
+        for (auto &i : timers->callbacks)
+        {
+            if (i.second)
+            {
+                i.first();
+            }
+        }
+        map.erase(timers->timepoint);
+        delete timers;
     }
 }
 
-void time_manager_t::insert(timer_t timer)
+timer_id time_manager_t::insert(timer_t timer)
 {
     timer.timepoint = (timer.timepoint + precision - 1) / precision * precision;
     if (timer.timepoint <= get_current_time())
     {
         timer.callback();
-        return;
+        return -1;
     }
-    queue.push(timer);
+    auto it = map.find(timer.timepoint);
+    if (it == map.end())
+    {
+        it = map.emplace(timer.timepoint, new timer_slot_t(timer.timepoint)).first;
+        queue.push(it->second);
+    }
+
+    it->second->callbacks.emplace_back(timer.callback, true);
+    return it->second->callbacks.size();
+}
+
+void time_manager_t::cancel(timer_t timer, timer_id id)
+{
+    auto it = map.find(timer.timepoint);
+    if (it != map.end())
+    {
+        it->second->callbacks[id].second = false;
+    }
 }
 
 microsecond_t time_manager_t::next_tick_timepoint()
@@ -43,7 +70,7 @@ microsecond_t time_manager_t::next_tick_timepoint()
     if (!queue.empty())
     {
         auto timer = queue.top();
-        return timer.timepoint;
+        return timer->timepoint;
     }
 
     return 0xFFFFFFFFFFFFFFFFLLU;
