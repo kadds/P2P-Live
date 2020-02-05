@@ -1,4 +1,4 @@
-name: C/C++ CI
+name: Build
 
 on: 
   push:
@@ -9,16 +9,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
     steps:
     - uses: actions/checkout@v2
     - name: cmake
-      run: mkdir build & cd build & cmake ..
+      run: |
+        mkdir build
+        cd build
+        cmake ..
     - name: make
       run: make -j
-  test:
-    runs-on:  ubuntu-latest
-    steps:
-      - name: test
-        run: build/bin/net-test
-        timeout-minutes: 5
