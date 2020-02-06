@@ -78,8 +78,9 @@ microsecond_t time_manager_t::next_tick_timepoint()
 
 microsecond_t get_current_time()
 {
-    std::chrono::high_resolution_clock clock;
-    clock.now();
+    /// FXIME: Use std clock
+    // std::chrono::high_resolution_clock clock;
+    // clock.now();
     struct timeval timeval;
     gettimeofday(&timeval, nullptr);
     return timeval.tv_usec + (microsecond_t)timeval.tv_sec * 1000000;
