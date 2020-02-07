@@ -30,12 +30,18 @@ void event_epoll_demultiplexer::add(handle_t handle, event_type_t type)
     epoll_ctl(fd, EPOLL_CTL_ADD, handle, &ev);
 }
 
-handle_t event_epoll_demultiplexer::select(event_type_t *type)
+handle_t event_epoll_demultiplexer::select(event_type_t *type, microsecond_t *timeout)
 {
     epoll_event ev;
-    int c = ::epoll_wait(fd, &ev, 1, -1);
-    if (c <= 0)
+    int t = *timeout / 1000;
+    int c = ::epoll_wait(fd, &ev, 1, t);
+    if (c < 0)
     {
+        return 0;
+    }
+    if (c == 0)
+    {
+        *timeout = 0;
         return 0;
     }
     int fd = 0;

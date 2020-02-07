@@ -15,6 +15,10 @@
     libnet is an **asynchronous** network library that uses **IO multiplexing** ( *select/epoll* ) and no-blocked IO, while using [**coroutines**](#Coroutines) for each connection to improve IO response. Includes coroutines, [thread pool](#Thread-pool), timer, tcp/udp encapsulation, peer to peer network sending/receiving.
 
 ## Building
+### Requirements
+* GCC 9.0+ which support c++17
+
+### Steps
 ```Bash
 git clone /url/to/repo
 mkdir P2P-Live/build && cd P2P-Live/build

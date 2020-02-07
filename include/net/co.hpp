@@ -38,6 +38,7 @@ template <typename T> class async_result_t
     T operator()() { return u.impl_data; }
     bool is_finish() { return ok; };
 };
+
 class coroutine_t;
 
 __thread inline coroutine_t *co_cur = nullptr;

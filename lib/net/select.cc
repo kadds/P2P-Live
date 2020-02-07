@@ -22,14 +22,26 @@ void event_select_demultiplexer::add(handle_t handle, event_type_t type)
 
 } // namespace net
 
-handle_t event_select_demultiplexer::select(event_type_t *type)
+handle_t event_select_demultiplexer::select(event_type_t *type, microsecond_t *timeout)
 {
     fd_set rs = read_set;
     fd_set ws = write_set;
     fd_set es = error_set;
+    struct timeval t;
+    t.tv_sec = *timeout / 1000000;
+    t.tv_usec = *timeout % 1000000;
+    auto ret = ::select(FD_SETSIZE, &rs, &ws, &es, &t);
+    if (ret == -1)
+    {
+        return 0;
+    }
+    if (ret == 0)
+    {
+        *timeout = 0;
+        return 0;
+    }
 
-    ::select(FD_SETSIZE, &rs, &ws, &es, 0);
-    for (int i = 0; i < FD_SETSIZE; i++)
+    for (int i = 3; i < FD_SETSIZE; i++)
     {
         if (FD_ISSET(i, &rs))
         {

@@ -49,6 +49,8 @@ class socket_t
     co::async_result_t<io_result> awrite_to(socket_buffer_t &buffer, socket_addr_t target);
     co::async_result_t<io_result> aread_from(socket_buffer_t &buffer, socket_addr_t &target);
 
+    void sleep(microsecond_t span);
+
     socket_addr_t local_addr();
     socket_addr_t remote_addr();
 

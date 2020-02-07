@@ -4,16 +4,7 @@
 
 namespace net
 {
-void sigpipe(int p) {}
-void sigint(int p)
-{
-    std::cout << "signal INT. exit ...";
-    exit(0);
-}
 
-void init_lib()
-{
-    signal(SIGPIPE, sigpipe);
-    signal(SIGINT, sigint);
-}
+void init_lib() { signal(SIGPIPE, SIG_IGN); }
+
 } // namespace net
