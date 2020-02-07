@@ -11,11 +11,13 @@ class socket_addr_t
     socket_addr_t();
     /// init address (any:port)
     socket_addr_t(int port);
+    socket_addr_t(u32 addr, int port);
     socket_addr_t(sockaddr_in addr);
     socket_addr_t(std::string addr, int port);
-    std::string to_string();
-    std::string get_addr();
-    int get_port();
+    std::string to_string() const;
+    std::string get_addr() const;
+    u32 v4_addr() const;
+    int get_port() const;
 
     sockaddr_in get_raw_addr() { return so_addr; }
 

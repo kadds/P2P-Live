@@ -23,7 +23,7 @@ socket_buffer_t::socket_buffer_t(std::string str)
     , data_len(0)
     , current_process(0)
 {
-    memccpy(ptr, str.c_str(), str.size(), str.size());
+    memcpy(ptr, str.c_str(), str.size());
 }
 
 socket_buffer_t::socket_buffer_t(long len)
@@ -75,7 +75,7 @@ long socket_buffer_t::write_string(const std::string &str)
     if (len > buffer_len)
         len = buffer_len;
 
-    memccpy(ptr, str.c_str(), len, len);
+    memcpy(ptr, str.c_str(), len);
     return len;
 }
 

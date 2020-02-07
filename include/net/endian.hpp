@@ -1,19 +1,10 @@
 #pragma once
+#include "net.hpp"
+#include "socket_buffer.hpp"
 #include <bit>
-#include <cstdint>
+#include <cstring>
 #include <tuple>
 #include <type_traits>
-namespace net
-{
-using i64 = int64_t;
-using u64 = uint64_t;
-using i32 = int32_t;
-using u32 = uint32_t;
-using i16 = int16_t;
-using u16 = uint16_t;
-using i8 = int8_t;
-using u8 = uint8_t;
-} // namespace net
 
 namespace net::serialization
 {
@@ -130,6 +121,26 @@ template <typename T> inline void cast_struct(T &val)
     {
         cast_struct_impl<T, typename Typelist::Next>(((char *)&val) + sizeof(typename Typelist::Type));
     }
+}
+
+template <typename T> inline bool cast_to(socket_buffer_t &buffer, T &val)
+{
+    auto ptr_from = buffer.get();
+    if (buffer.get_data_length() < sizeof(val))
+        return false;
+    memcpy(&val, ptr_from, sizeof(val));
+    cast<T>(val);
+    return true;
+}
+
+template <typename T> inline bool save_to(T &val, socket_buffer_t &buffer)
+{
+    auto ptr = buffer.get();
+    if (buffer.get_data_length() < sizeof(val))
+        return false;
+    cast<T>(val);
+    memcpy(ptr, &val, sizeof(val));
+    return true;
 }
 
 } // namespace net::endian

@@ -17,6 +17,7 @@ struct except_buffer_helper_t
 
     socket_buffer_t &operator()() const { return *buf; }
 };
+
 class socket_buffer_t
 {
     byte *ptr;
