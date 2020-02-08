@@ -19,9 +19,9 @@ class thread_pool_t
 
     /// commit a task to thread pool
     ///
-    ///\param task
-    ///\return return async result which can wait by coroutine 'await' to get the result
-    template <typename Ret> co::async_result_t<Ret> commit(std::function<Ret()> task) {}
+    ///\param task to run
+    ///\return none
+    void commit(std::function<void()> task);
 
     /// return idle thread count
     int get_idles() const;

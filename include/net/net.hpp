@@ -30,11 +30,20 @@ void init_lib();
 enum io_result
 {
     ok,
+    /// io in process
+    /// acceptor
     in_process,
+    /// continue io request
     cont,
+    /// connection is closed by peer/self
     closed,
+    /// io request is timeout
+    /// connector
     timeout,
+    /// io request failed
     failed,
+    /// buffer too small
+    /// when udp recv
     buffer_too_small,
 };
 } // namespace net

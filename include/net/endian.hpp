@@ -20,12 +20,13 @@ template <typename Head> struct typelist_t<Head>
 template <typename Head, typename... Args> struct typelist_t<Head, Args...>
 {
     constexpr static bool has_next = true;
-    // constexpr typelist_t<Head, Args...> next() const { return typelist_t<Head, Args...>(); }
+    /// next typelist
     using Next = typelist_t<Args...>;
     using Type = Head;
 };
 
 } // namespace net::serialization
+
 namespace net::endian
 {
 
@@ -35,6 +36,9 @@ template <typename T> void cast_struct(T &val);
 
 template <typename T, size_t N> void cast_array(T (&val)[N]);
 
+/// cast struct to network endian (big endian).
+/// do nothing at big endian architecture.
+/// unsupport union.
 template <typename T> inline void cast(T &val)
 {
     if constexpr (little_endian())
@@ -104,16 +108,9 @@ template <typename T, typename Typelist> inline void cast_struct_impl(void *val)
     }
 }
 
-// template <typename> struct extra_typelist;
-
-// template <template <typename... Args> typename Typelist, typename... Args> struct extra_typelist<Typelist<Args...>>
-// {
-//     using type = Args;
-// };
-
 template <typename T> inline void cast_struct(T &val)
 {
-    static_assert(std::is_pod_v<T>, "struct must be POD type");
+    static_assert(std::is_pod_v<T>, "struct should be a POD type. BUG show.");
     using Typelist = typename T::member_list_t;
     cast<typename Typelist::Type>(*(typename Typelist::Type *)&val);
 

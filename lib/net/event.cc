@@ -5,6 +5,7 @@
 #include "net/socket.hpp"
 #include <algorithm>
 #include <iostream>
+#include <signal.h>
 
 namespace net
 {
@@ -75,6 +76,8 @@ int event_loop_t::run()
         microsecond_t timeout = time_manager->next_tick_timepoint() - get_current_time();
         if (timeout < 0)
             timeout = 0;
+        if (is_exit)
+            return exit_code;
 
         auto handle = demuxer->select(&type, &timeout);
         if (handle != 0)

@@ -48,10 +48,13 @@ constexpr int stack_size = 1 << 16;
 ctx::fiber &&co_wrapper(ctx::fiber &&sink, coroutine_t *co);
 ctx::fiber &&co_reschedule_wrapper(ctx::fiber &&sink, coroutine_t *co, std::function<void()> func);
 
+/// coroutine
 class coroutine_t
 {
     ctx::fiber context;
     std::function<void()> func;
+    /// previous coroutine
+    /// make up a list chain
     coroutine_t *prev;
     friend ctx::fiber &&co_wrapper(ctx::fiber &&sink, coroutine_t *co);
     friend ctx::fiber &&co_reschedule_wrapper(ctx::fiber &&sink, coroutine_t *co, std::function<void()> func);

@@ -21,39 +21,14 @@ enum : event_type_t
     error = 4,
 
     /// extend event
-    add = 32,
-    remove = 64,
-    tick = 128,
 
 };
 };
 
 class socket_t;
-
 class event_context_t;
-
-enum class event_result
-{
-    ok,
-    remove_handler,
-};
-
-using event_handler_t = std::function<event_result(event_context_t &context, event_type_t type, socket_t *socket)>;
-
-struct event_handler_content_t
-{
-    event_handler_t handler;
-    bool enable;
-    event_handler_content_t(event_handler_t handler)
-        : handler(handler)
-        , enable(true)
-    {
-    }
-};
-
 class event_loop_t;
 
-using socket_event_map_t = std::unordered_map<handle_t, std::list<event_handler_content_t>>;
 using socket_handle_map_t = std::unordered_map<handle_t, socket_t *>;
 using socket_event_loop_map_t = std::unordered_map<handle_t, event_loop_t *>;
 
@@ -91,6 +66,10 @@ class event_demultiplexer
     virtual ~event_demultiplexer(){};
 };
 
+/// event loop
+/// a loop pre thread
+/// all event is generate by demultiplexer. event loop just fetch event and distribute event run into event coroutine.
+///\note remember add this loop to context
 class event_loop_t
 {
     bool is_exit;
@@ -128,6 +107,9 @@ class event_loop_t
     static event_loop_t &current();
 };
 
+/// event context
+/// unique global context in an application
+/// manage event loop
 class event_context_t
 {
     event_strategy strategy;

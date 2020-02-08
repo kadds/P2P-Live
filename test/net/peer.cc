@@ -42,13 +42,18 @@ TEST(PeerTest, Base)
     });
 
     front_server.at_inner_server_join([](load_balance::front_server_t &server, socket_t *client) {
-
+        // do nothing
+        // try to pull work load
     });
 
     front_server.bind_inner(context, front_inner_addr, true);
     front_server.bind(context, front_addr, true);
 
-    server0.at_front_server_connect([](bool ok, socket_t *socket) { GTEST_ASSERT_EQ(ok, true); });
+    server0.at_front_server_connect([](bool ok, socket_t *socket) {
+        // do nothing
+        // when ok is false, the connection connect failed, report an error at server.
+        GTEST_ASSERT_EQ(ok, true);
+    });
 
     server0.bind_server(context, server0_addr, true);
     server0.connect_to_front_server(context, front_inner_addr);

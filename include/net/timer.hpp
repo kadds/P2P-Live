@@ -1,4 +1,5 @@
 #pragma once
+#include "net.hpp"
 #include <cstdint>
 #include <functional>
 #include <list>
@@ -8,7 +9,7 @@
 
 namespace net
 {
-using microsecond_t = int64_t;
+using microsecond_t = u64;
 using callback_t = std::function<void()>;
 // 10ms
 inline constexpr microsecond_t timer_min_precision = 10000;
