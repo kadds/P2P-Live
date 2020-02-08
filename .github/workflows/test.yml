@@ -8,6 +8,7 @@ jobs:
     runs-on:  ubuntu-latest
     needs: Build
     steps:
-      - name: test
-        run: build/bin/net-test
-        timeout-minutes: 5
+      - name: run docker container to test
+        using: 'docker'
+        image: 'Dockerfile'
+          args: cmake .. && make -j && test-net
