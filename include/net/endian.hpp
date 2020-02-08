@@ -1,7 +1,6 @@
 #pragma once
 #include "net.hpp"
 #include "socket_buffer.hpp"
-#include <bit>
 #include <cstring>
 #include <tuple>
 #include <type_traits>
