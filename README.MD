@@ -1,8 +1,8 @@
 # A P2P-based online live broadcast system
 ![GPL-3.0](https://img.shields.io/badge/License-GPL-green)  
-![build](https://github.com/kadds/P2P-Live/workflows/Build/badge.svg)
-![Test](https://github.com/kadds/P2P-Live/workflows/Test/badge.svg)
-![lint](https://github.com/kadds/P2P-Live/workflows/Lint/badge.svg)
+![Build:master](https://github.com/kadds/P2P-Live/workflows/Build/badge.svg)
+![Test:master](https://github.com/kadds/P2P-Live/workflows/Test/badge.svg)
+![Lint:master](https://github.com/kadds/P2P-Live/workflows/Lint/badge.svg)
 
 ## Projects
 * **client**             *src/client*  
@@ -14,13 +14,19 @@
 * **libnet**             *lib/net*  
     libnet is an **asynchronous** network library that uses **IO multiplexing** ( *select/epoll* ) and no-blocked IO, while using [**coroutines**](#Coroutines) for each connection to improve IO response. Includes coroutines, [thread pool](#Thread-pool), timer, tcp/udp encapsulation, peer to peer network sending/receiving.
 
-## Building
-### Requirements
-* GCC 9.0+ which support c++17
-
-### Steps
+## Building  
+Setting up a development environment with docker (optional):
 ```Bash
+# build image
+docker build -t p2p-live .
+# run docker container
+docker run -i -t p2p-live /usr/bin/bash
+cd root
 git clone /url/to/repo
+```
+
+Building:
+```Bash
 mkdir P2P-Live/build && cd P2P-Live/build
 # set library path like -DCMAKE_PREFIX_PATH=/usr/local/lib
 cmake ..
