@@ -1,0 +1,40 @@
+name: Build
+
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '*.yml'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: install deps
+      run: | 
+        pacman -Sy --noconfirm
+        pacman -S --noconfirm make cmake gcc ffmpeg qt5-base google-glog gtest boost git 
+    - name: build
+      run: |
+        cmake .. 
+        make -j
+  test:
+    runs-on:  ubuntu-latest
+    needs: build
+    container: archlinux:latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: install deps
+      run: | 
+        pacman -Sy --noconfirm
+        pacman -S --noconfirm make cmake gcc ffmpeg qt5-base google-glog gtest boost git 
+    - name: build
+      run: |
+        cmake .. 
+        make -j
+    - name: test
+      run: |
+        ./bin/test-net
+          

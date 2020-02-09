@@ -2,7 +2,10 @@ name: Lint
 
 on:
   push:
-      
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '*.yml'
 jobs:
   lint:
     runs-on:  ubuntu-latest
