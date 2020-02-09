@@ -18,6 +18,8 @@ jobs:
         pacman -S --noconfirm make cmake gcc ffmpeg qt5-base google-glog gtest boost git 
     - name: build
       run: |
+        mkdir build
+        cd build
         cmake .. 
         make -j
   test:
@@ -32,6 +34,8 @@ jobs:
         pacman -S --noconfirm make cmake gcc ffmpeg qt5-base google-glog gtest boost git 
     - name: build
       run: |
+        mkdir build
+        cd build
         cmake .. 
         make -j
     - name: test
