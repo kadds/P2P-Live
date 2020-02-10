@@ -15,8 +15,9 @@ struct except_buffer_helper_t
     except_buffer_helper_t length(long len);
     except_buffer_helper_t origin_length();
 
-    socket_buffer_t &operator()() { return *buf; }
+    socket_buffer_t &operator()() const { return *buf; }
 };
+
 class socket_buffer_t
 {
     byte *ptr;

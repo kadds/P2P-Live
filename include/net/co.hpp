@@ -38,6 +38,7 @@ template <typename T> class async_result_t
     T operator()() { return u.impl_data; }
     bool is_finish() { return ok; };
 };
+
 class coroutine_t;
 
 __thread inline coroutine_t *co_cur = nullptr;
@@ -47,10 +48,13 @@ constexpr int stack_size = 1 << 16;
 ctx::fiber &&co_wrapper(ctx::fiber &&sink, coroutine_t *co);
 ctx::fiber &&co_reschedule_wrapper(ctx::fiber &&sink, coroutine_t *co, std::function<void()> func);
 
+/// coroutine
 class coroutine_t
 {
     ctx::fiber context;
     std::function<void()> func;
+    /// previous coroutine
+    /// make up a list chain
     coroutine_t *prev;
     friend ctx::fiber &&co_wrapper(ctx::fiber &&sink, coroutine_t *co);
     friend ctx::fiber &&co_reschedule_wrapper(ctx::fiber &&sink, coroutine_t *co, std::function<void()> func);

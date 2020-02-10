@@ -227,6 +227,14 @@ co::async_result_t<io_result> socket_t::aread_from(socket_buffer_t &buffer, sock
     return ret;
 }
 
+void socket_t::sleep(microsecond_t span)
+{
+    if (loop->add_timer(make_timer(span, [this]() { co->resume(); })) >= 0)
+    {
+        co::coroutine_t::yield();
+    }
+}
+
 socket_addr_t socket_t::local_addr()
 {
     sockaddr_in in;
