@@ -4,6 +4,7 @@
 #include<iostream>
 extern "C" {
 #include<libavdevice/avdevice.h>
+#include<libavcodec/avcodec.h>
 #include<libavformat/avformat.h>
 #include<libavutil/avutil.h>
 #include<libavutil/time.h>
@@ -27,10 +28,13 @@ class MainWindow : public QMainWindow
     int InInit(char* in_url,AVFormatContext *&in_avfc);
     int OutInit(char* out_url,AVFormatContext *&out_avfc);
     int ErrorExit(int errorNum);
+    int ErrorExit(string errorStr);
+
     void show_dshow_device();
+    inline double r2d(AVRational r);
     int demux(char* pInputFile,char* pOutputVideoFile,char* pOutputAudioFile);
     int RGBToYUV(int width, int height);
-    int SDL();
+    int SDL(FILE *f,int width,int height);
     
     ~MainWindow();
 
