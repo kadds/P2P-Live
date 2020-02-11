@@ -13,6 +13,8 @@ socket_t *server_t::bind(event_context_t &context, socket_addr_t addr, bool reus
     return socket;
 }
 
+void server_t::run(std::function<void()> func) { socket->startup_coroutine(co::coroutine_t::create(func)); }
+
 server_t::~server_t() { close(); }
 
 void server_t::close()
@@ -48,6 +50,8 @@ void client_t::connect(event_context_t &context, socket_addr_t addr, bool remote
         connect_udp(socket, addr, 0);
     }
 }
+
+void client_t::run(std::function<void()> func) { socket->startup_coroutine(co::coroutine_t::create(func)); }
 
 socket_addr_t client_t::get_address() const { return connect_addr; }
 

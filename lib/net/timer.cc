@@ -86,4 +86,11 @@ microsecond_t get_current_time()
     return timeval.tv_usec + (microsecond_t)timeval.tv_sec * 1000000;
 }
 
+microsecond_t get_timestamp()
+{
+    return std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now())
+        .time_since_epoch()
+        .count();
+}
+
 } // namespace net

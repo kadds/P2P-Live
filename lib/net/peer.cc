@@ -7,102 +7,173 @@
 namespace net::peer
 {
 /// client -------------------------------------------------------------------------------------
-peer_client_t::peer_client_t()
-    : in_peer_network(false)
+peer_client_t::peer_client_t(session_id_t sid)
+    : sid(sid)
 {
 }
 
 peer_client_t::~peer_client_t() {}
 
-void peer_client_t::front_server_main(event_context_t &context, tcp::client_t &client, socket_t *socket)
+peer_t *peer_client_t::add_peer(event_context_t &context, socket_addr_t peer_addr)
 {
-    peer_get_server_request_t request;
-    peer_get_server_respond_t respond;
-    request.room_id = room_id;
-    request.version = 1;
-    /// TODO: gen key
-    request.key = get_current_time() % 1024;
-    socket_buffer_t send_buffer(sizeof(request));
-    send_buffer.expect().origin_length();
-    assert(endian::save_to(request, send_buffer));
-    co::await(socket_awrite, socket, send_buffer);
-    socket_buffer_t recv_buffer(sizeof(respond));
-    recv_buffer.expect().origin_length();
-    co::await(socket_aread, socket, recv_buffer);
-    assert(endian::cast_to(recv_buffer, respond));
-    // we get content server address
-    if (respond.state == 0)
+    auto peer = std::make_unique<peer_t>();
+    peer->remote_address = peer_addr;
+    socket_addr_t addr(0);
+    peer->udp.bind(context, addr);
+    auto ptr = peer.get();
+    peers.push_back(std::move(peer));
+    return ptr;
+}
+
+void peer_client_t::client_main(peer_t *peer)
+{
+    auto socket = peer->udp.get_socket();
+    auto addr = peer->udp.get_socket()->local_addr();
+
     {
-        socket_addr_t content_server_addr(respond.ip_addr, respond.port);
-        room_client.at_server_connect([this](tcp::client_t &client, socket_t *socket) {
-            if (handler)
+        // request connect
+        // swap init data
+        peer_init_request_t req;
+        req.type = peer_msg_type::init_request;
+        req.sid = sid;
+        socket_buffer_t buffer(sizeof(req));
+        buffer.expect().origin_length();
+        assert(endian::save_to(req, buffer));
+        if (co::await(socket_awrite_to, socket, buffer, peer->remote_address) != io_result::ok)
+        {
+            for (auto it = peers.begin(); it != peers.end(); it++)
             {
-                handler(*this, socket);
+                if (it->get() == peer)
+                {
+                    peers.erase(it);
+                }
             }
-        });
-        room_client.connect(context, content_server_addr);
+            if (disconnect_handler)
+                disconnect_handler(*this, peer);
+            return;
+        }
     }
-    else
+
+    socket_buffer_t recv_buffer(1472);
+    peer_data_package_t data;
+    while (1)
     {
-        if (error_handler)
-            error_handler(*this, socket);
+        socket_addr_t addr;
+        recv_buffer.expect().origin_length();
+        co::await(socket_aread_from, socket, recv_buffer, addr);
+        u8 type = recv_buffer.get_step_ptr()[0];
+        if (type == peer_msg_type::init_respond)
+        {
+            peer_init_respond_t respond;
+            assert(endian::cast_to(recv_buffer, respond));
+            peer->last_online_timestamp = get_timestamp();
+            peer->ping_ok = true;
+            if (connect_handler)
+                connect_handler(*this, peer);
+        }
+        else if (type == peer_msg_type::data_package)
+        {
+            endian::cast_to(recv_buffer, data);
+            if (handler)
+                handler(*this, data, peer);
+        }
+        else if (type == peer_msg_type::heart) // heart
+        {
+            peer->last_online_timestamp = get_timestamp();
+        }
     }
 }
 
-void peer_client_t::join_peer_network(event_context_t &context, socket_addr_t server_addr, int room_id)
-{
-    this->room_id = room_id;
-    client
-        .at_server_connect(std::bind(&peer_client_t::front_server_main, this, std::ref(context), std::placeholders::_1,
-                                     std::placeholders::_2))
-        .at_server_connection_error([this](tcp::client_t &client, socket_t *socket) {
-            if (error_handler)
-                error_handler(*this, socket);
-        });
+void peer_client_t::connect_to_peer(peer_t *peer) { peer->udp.run(std::bind(&peer_client_t::client_main, this, peer)); }
 
-    client.connect(context, server_addr);
+peer_client_t &peer_client_t::at_peer_disconnect(peer_disconnect_t handler)
+{
+    this->disconnect_handler = handler;
+    return *this;
 }
 
-peer_client_t &peer_client_t::at_connnet_peer_server(connect_peer_server_handler_t handler)
+peer_client_t &peer_client_t::at_peer_connect(peer_connect_ok_t handler)
+{
+    this->connect_handler = handler;
+    return *this;
+}
+
+peer_client_t &peer_client_t::at_peer_data_recv(peer_server_data_recv_t handler)
 {
     this->handler = handler;
     return *this;
 }
 
-peer_client_t &peer_client_t::at_connect_peer_server_error(connect_peer_server_handler_t handler)
+void peer_client_t::request_data_from_peer(u64 data_id)
 {
-    this->error_handler = handler;
-    return *this;
+    auto idx = rand() % peers.size();
+    auto peer = peers[idx].get();
+    peer->current_request_data_id = data_id;
+    peer->in_request = true;
 }
 
 /// server-------------------------------------------------------------------------------------------
 
-void peer_server_t::connect_to_front_server(event_context_t &context, socket_addr_t addr)
+void peer_server_t::server_main()
 {
-    client
-        .at_server_connect([this](tcp::client_t &client, socket_t *socket) {
-            if (front_server_handler)
+    socket_addr_t addr;
+    socket_buffer_t buffer(1472);
+    while (1)
+    {
+        buffer.expect().origin_length();
+        co::await(socket_aread_from, server.get_socket(), buffer, addr);
+        u8 type = buffer.get_step_ptr()[0];
+        if (type == peer_msg_type::init_request) // init request
+        {
+            auto it = peers_map.find(addr);
+            if (it == peers_map.end())
             {
-                front_server_handler(true, socket);
+                auto peer = std::make_unique<speer_t>();
+                peer->last_online_timestamp = get_timestamp();
+                peer->ping_ok = true;
+                auto ptr = peer.get();
+                peers_map.emplace(addr, std::move(peer));
+                peer_init_respond_t respond;
+                respond.type = 1;
+                respond.first_data_id = 0;
+                respond.last_data_id = 0;
+                buffer.expect().length(sizeof(respond));
+                assert(endian::save_to(respond, buffer));
+                co::await(socket_awrite_to, server.get_socket(), buffer, addr);
+                if (client_handler)
+                    client_handler(*this, ptr);
             }
-        })
-        .at_server_connection_error([this](tcp::client_t &client, socket_t *socket) {
-            if (front_server_handler)
+            // else aready done
+        }
+        else if (type == peer_msg_type::data_request)
+        {
+            // request data
+            auto it = peers_map.find(addr);
+            if (it == peers_map.end())
             {
-                front_server_handler(false, socket);
+                continue;
             }
-        });
-    client.connect(context, addr);
+            peer_data_request_t request;
+            assert(endian::cast_to(buffer, request));
+            if (data_handler)
+                data_handler(*this, request, it->second.get());
+        }
+        else if (type == peer_msg_type::heart)
+        {
+            auto it = peers_map.find(addr);
+            if (it == peers_map.end())
+            {
+                continue;
+            }
+            it->second->last_online_timestamp = get_timestamp();
+        }
+    }
 }
 
 void peer_server_t::bind_server(event_context_t &context, socket_addr_t bind_taddr, bool reuse_addr)
 {
-    server.at_client_join([this](tcp::server_t &server, socket_t *socket) {
-        if (client_handler)
-            client_handler(*this, socket);
-    });
-
-    server.listen(context, bind_taddr, 100000, reuse_addr);
+    server.bind(context, bind_taddr);
+    server.run(std::bind(&peer_server_t::server_main, this));
 }
 
 peer_server_t &peer_server_t::at_client_join(client_join_handler_t handler)
@@ -111,9 +182,9 @@ peer_server_t &peer_server_t::at_client_join(client_join_handler_t handler)
     return *this;
 }
 
-peer_server_t &peer_server_t::at_front_server_connect(front_server_connect_handler_t handler)
+peer_server_t &peer_server_t::at_request_data(client_data_request_handler_t handler)
 {
-    front_server_handler = handler;
+    data_handler = handler;
     return *this;
 }
 

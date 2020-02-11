@@ -62,5 +62,6 @@ struct time_manager_t
 std::unique_ptr<time_manager_t> create_time_manager(microsecond_t precision = timer_min_precision);
 
 microsecond_t get_current_time();
+microsecond_t get_timestamp();
 
 } // namespace net

@@ -3,7 +3,7 @@
 
 namespace net
 {
-except_buffer_helper_t except_buffer_helper_t::length(long len)
+except_buffer_helper_t except_buffer_helper_t::length(u64 len)
 {
     buf->data_len = len;
     buf->current_process = 0;
@@ -22,15 +22,17 @@ socket_buffer_t::socket_buffer_t(std::string str)
     , buffer_len(str.size())
     , data_len(0)
     , current_process(0)
+    , walk_offset(0)
 {
     memcpy(ptr, str.c_str(), str.size());
 }
 
-socket_buffer_t::socket_buffer_t(long len)
+socket_buffer_t::socket_buffer_t(u64 len)
     : ptr(new byte[len])
     , buffer_len(len)
     , data_len(0)
     , current_process(0)
+    , walk_offset(0)
 {
 }
 

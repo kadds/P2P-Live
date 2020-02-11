@@ -28,5 +28,6 @@ class socket_addr_t
     }
 
     bool operator!=(const socket_addr_t &addr) const { return !operator==(addr); }
+    u64 hash() const { return ((u64)so_addr.sin_addr.s_addr << 32) | so_addr.sin_port; };
 };
 }; // namespace net

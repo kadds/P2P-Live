@@ -49,6 +49,8 @@ using front_handler_t =
 
 using server_join_handler_t = std::function<void(front_server_t &, socket_t *)>;
 /// load balance server
+/// context server connect it that sending server work load, address
+/// peer client connect it to get the context server address
 class front_server_t
 {
   private:
@@ -57,10 +59,18 @@ class front_server_t
     tcp::server_t server, inner_server;
 
   public:
+    /// bind tcp acceptor. recvice inner server data.
+    ///
     void bind_inner(event_context_t &context, socket_addr_t addr, bool reuse_addr = false);
+
     void bind(event_context_t &context, socket_addr_t addr, bool reuse_addr = false);
     front_server_t &at_client_request(front_handler_t handler);
     front_server_t &at_inner_server_join(server_join_handler_t handler);
+};
+
+class front_client_t
+{
+    tcp::client_t client;
 };
 
 } // namespace load_balance

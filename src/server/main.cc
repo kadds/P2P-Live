@@ -87,7 +87,7 @@ int main(int argc, char **argv)
         .at_client_exit([](net::tcp::server_t &server, net::socket_t *socket) {
             std::cout << "client exit " << socket->remote_addr().to_string() << "\n";
         });
-    server.listen(context, net::socket_addr_t("127.0.0.1", net::command_port), 1000);
+    server.listen(context, net::socket_addr_t("127.0.0.1", 10244), 1000);
     LOG(INFO) << "run event loop";
     return looper.run();
 }

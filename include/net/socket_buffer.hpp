@@ -12,7 +12,7 @@ struct except_buffer_helper_t
     {
     }
 
-    except_buffer_helper_t length(long len);
+    except_buffer_helper_t length(u64 len);
     except_buffer_helper_t origin_length();
 
     socket_buffer_t &operator()() const { return *buf; }
@@ -21,32 +21,48 @@ struct except_buffer_helper_t
 class socket_buffer_t
 {
     byte *ptr;
-    long buffer_len;
-    long data_len;
-    long current_process;
+    u64 buffer_len;
+    u64 data_len;
+    u64 current_process;
+    u64 walk_offset;
     friend struct except_buffer_helper_t;
 
   public:
     socket_buffer_t(std::string str);
-    socket_buffer_t(long len);
+    socket_buffer_t(u64 len);
     socket_buffer_t(socket_buffer_t &&buffer);
     socket_buffer_t(const socket_buffer_t &) = delete;
     socket_buffer_t &operator=(const socket_buffer_t &) = delete;
     socket_buffer_t &operator=(socket_buffer_t &&buffer);
     ~socket_buffer_t();
 
-    byte *get() const { return ptr; }
-    long get_data_length() const { return data_len; }
-    long get_buffer_length() const { return buffer_len; }
-    long get_process_length() const { return current_process; }
+    byte *get_raw_ptr() const { return ptr; }
+    byte *get_step_ptr() { return ptr + walk_offset; }
+    u64 get_data_length() const { return data_len; }
+    u64 get_step_rest_length() const { return data_len - walk_offset; }
+    u64 get_buffer_length() const { return buffer_len; }
+    u64 get_process_length() const { return current_process; }
 
-    void set_process_length(long len) { current_process = len; }
+    void set_process_length(u64 len) { current_process = len; }
     void end_process() { data_len = current_process; }
 
-    except_buffer_helper_t expect() { return except_buffer_helper_t(this); }
+    except_buffer_helper_t expect()
+    {
+        walk_offset = 0;
+        return except_buffer_helper_t(this);
+    }
 
     long write_string(const std::string &str);
     std::string to_string() const;
+
+    void walk_step(u64 delta)
+    {
+        walk_offset += delta;
+        if (walk_offset > data_len)
+        {
+            walk_offset = data_len;
+        }
+    }
 };
 
 }; // namespace net

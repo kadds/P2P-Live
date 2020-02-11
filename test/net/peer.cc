@@ -1,79 +1,76 @@
 #include "net/peer.hpp"
 #include "net/event.hpp"
-#include "net/load_balance.hpp"
 #include "net/socket.hpp"
 #include <gtest/gtest.h>
 
 using namespace net::peer;
 using namespace net;
 
-TEST(PeerTest, Base)
+TEST(PeerTest, PeerConnection)
 {
     event_context_t context(event_strategy::epoll);
     event_loop_t loop;
     context.add_event_loop(&loop);
 
-    socket_addr_t front_addr(1244);
-    socket_addr_t front_inner_addr(1330);
+    socket_addr_t server_addr(1999);
+    peer_server_t server;
 
-    socket_addr_t server0_addr(1288);
+    int ok = 0;
 
-    peer_server_t server0;
+    server.bind_server(context, server_addr, true);
+    server.at_client_join([&ok](peer_server_t &server, speer_t *speer) { ok++; });
 
-    load_balance::front_server_t front_server;
+    peer_client_t client(1);
 
-    socket_addr_t least_server = server0_addr;
-
-    front_server.at_client_request([&least_server](load_balance::front_server_t &server,
-                                                   const peer_get_server_request_t &request,
-                                                   peer_get_server_respond_t &respond, socket_t *client) -> bool {
-        if (request.room_id > 0 && request.room_id < 1000 && request.version == 1)
-        {
-            /// tell client the context server address and port
-            respond.ip_addr = least_server.v4_addr();
-            respond.port = least_server.get_port();
-            respond.version = 1;
-            respond.state = 0;
-            respond.session_id = request.room_id * 100;
-            return true;
-        }
-        [&request]() { GTEST_ASSERT_EQ(request.room_id, 100); }();
-        return false;
-    });
-
-    front_server.at_inner_server_join([](load_balance::front_server_t &server, socket_t *client) {
-        // do nothing
-        // try to pull work load
-    });
-
-    front_server.bind_inner(context, front_inner_addr, true);
-    front_server.bind(context, front_addr, true);
-
-    server0.at_front_server_connect([](bool ok, socket_t *socket) {
-        // do nothing
-        // when ok is false, the connection connect failed, report an error at server.
-        GTEST_ASSERT_EQ(ok, true);
-    });
-
-    server0.bind_server(context, server0_addr, true);
-    server0.connect_to_front_server(context, front_inner_addr);
-    bool ok = false;
-
-    peer_client_t client;
-    client.at_connnet_peer_server([&ok](peer_client_t &client, socket_t *socket) {
-        ok = true;
-        GTEST_LOG_(INFO) << "connect ok";
-    });
-
-    client.at_connect_peer_server_error([](peer_client_t &client, socket_t *socket) {
+    client.at_peer_disconnect([](peer_client_t &client, peer_t *peer) {
         std::string str = "peer client connect error";
         GTEST_ASSERT_EQ("", str);
     });
-    client.join_peer_network(context, front_addr, 10);
 
-    loop.add_timer(make_timer(1000000, [&loop]() { loop.exit(0); }));
+    client.at_peer_connect([&ok, &loop](peer_client_t &client, peer_t *peer) {
+        ok++;
+        loop.exit(0);
+    });
+
+    auto peer = client.add_peer(context, server_addr);
+    client.connect_to_peer(peer);
+
+    loop.add_timer(make_timer(1000000, [&loop]() { loop.exit(-1); }));
     loop.run();
-    GTEST_ASSERT_EQ(ok, true);
+    GTEST_ASSERT_EQ(ok, 2);
 }
 
-TEST(PeerTest, DataTransport) {}
+TEST(PeerTest, DataTransport)
+{
+    event_context_t context(event_strategy::epoll);
+    event_loop_t loop;
+    context.add_event_loop(&loop);
+
+    socket_addr_t server_addr(1999);
+    peer_server_t server;
+
+    server.at_request_data([](peer_server_t &server, peer_data_request_t &request, speer_t *peer) {
+        if (request.data_id == 1)
+        {
+        }
+    });
+
+    server.bind_server(context, server_addr, true);
+
+    peer_client_t client(1);
+
+    client.at_peer_disconnect([](peer_client_t &client, peer_t *peer) {
+        std::string str = "peer client connect error";
+        GTEST_ASSERT_EQ("", str);
+    });
+
+    client.at_peer_connect([&loop](peer_client_t &client, peer_t *peer) { client.request_data_from_peer(1); });
+
+    client.at_peer_data_recv([](peer_client_t &client, peer_data_package_t &data, peer_t *peer) {});
+
+    auto peer = client.add_peer(context, server_addr);
+    client.connect_to_peer(peer);
+
+    loop.add_timer(make_timer(1000000, [&loop]() { loop.exit(-1); }));
+    loop.run();
+}

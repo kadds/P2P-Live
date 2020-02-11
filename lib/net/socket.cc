@@ -22,7 +22,7 @@ io_result socket_t::write_async(socket_buffer_t &buffer)
 {
     unsigned long buffer_offset = buffer.get_process_length();
     unsigned long buffer_size = buffer.get_data_length() - buffer.get_process_length();
-    byte *buf = buffer.get();
+    byte *buf = buffer.get_raw_ptr();
     while (buffer_size > 0)
     {
         auto len = send(fd, buf + buffer_offset, buffer_size, MSG_DONTWAIT);
@@ -62,7 +62,7 @@ io_result socket_t::read_async(socket_buffer_t &buffer)
 {
     unsigned long buffer_offset = buffer.get_process_length();
     unsigned long buffer_size = buffer.get_data_length() - buffer.get_process_length();
-    byte *buf = buffer.get();
+    byte *buf = buffer.get_raw_ptr();
     ssize_t len;
     while (buffer_size > 0)
     {
@@ -146,9 +146,8 @@ io_result socket_t::write_pack(socket_buffer_t &buffer, socket_addr_t target)
     auto addr = target.get_raw_addr();
     unsigned long buffer_offset = buffer.get_process_length();
     unsigned long buffer_size = buffer.get_data_length() - buffer.get_process_length();
-    byte *buf = buffer.get();
-    auto len =
-        sendto(fd, buffer.get(), buffer.get_data_length(), MSG_DONTWAIT, (sockaddr *)&addr, (socklen_t)sizeof(addr));
+    auto len = sendto(fd, buffer.get_raw_ptr(), buffer.get_data_length(), MSG_DONTWAIT, (sockaddr *)&addr,
+                      (socklen_t)sizeof(addr));
     if (len == 0)
     {
         return io_result::closed;
@@ -178,7 +177,7 @@ io_result socket_t::read_pack(socket_buffer_t &buffer, socket_addr_t &target)
 {
     auto addr = target.get_raw_addr();
     socklen_t slen = sizeof(addr);
-    auto len = recvfrom(fd, buffer.get(), buffer.get_data_length(), MSG_DONTWAIT, (sockaddr *)&addr, &slen);
+    auto len = recvfrom(fd, buffer.get_raw_ptr(), buffer.get_data_length(), MSG_DONTWAIT, (sockaddr *)&addr, &slen);
     if (len == 0)
     {
         return io_result::closed;

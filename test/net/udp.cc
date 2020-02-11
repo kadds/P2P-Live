@@ -18,7 +18,7 @@ TEST(UPDTest, UPDPackageTest)
     udp::server_t server;
 
     server.bind(ctx, test_addr);
-    server.get_socket()->startup_coroutine(co::coroutine_t::create([&server, &loop]() {
+    server.run([&server, &loop]() {
         auto socket = server.get_socket();
         socket_buffer_t buffer(test_data.size());
         buffer.expect().origin_length();
@@ -29,11 +29,11 @@ TEST(UPDTest, UPDPackageTest)
         GTEST_ASSERT_EQ(co::await(socket_awrite_to, socket, buffer, addr), io_result::ok);
         loop.exit(0);
         server.close();
-    }));
+    });
 
     udp::client_t client;
     client.connect(ctx, test_addr, false);
-    client.get_socket()->startup_coroutine(co::coroutine_t::create([&client, &test_addr]() {
+    client.run([&client, &test_addr]() {
         auto socket = client.get_socket();
         socket_buffer_t buffer(test_data);
         buffer.expect().origin_length();
@@ -43,7 +43,7 @@ TEST(UPDTest, UPDPackageTest)
         GTEST_ASSERT_EQ(co::await(socket_aread_from, socket, buffer, addr), io_result::ok);
         GTEST_ASSERT_EQ(buffer.to_string(), test_data);
         client.close();
-    }));
+    });
     loop.run();
 }
 
@@ -51,7 +51,7 @@ void send_client(event_context_t &ctx, socket_addr_t addr)
 {
     udp::client_t client;
     client.connect(ctx, addr, false);
-    client.get_socket()->startup_coroutine(co::coroutine_t::create([&client, addr]() {
+    client.run([&client, addr]() {
         auto socket = client.get_socket();
         socket_buffer_t buffer(test_data);
         buffer.expect().origin_length();
@@ -62,7 +62,7 @@ void send_client(event_context_t &ctx, socket_addr_t addr)
         GTEST_ASSERT_EQ(buffer.to_string(), test_data);
         GTEST_ASSERT_EQ(addr, waddr);
         client.close();
-    }));
+    });
 }
 
 TEST(UPDTest, UPDConnectionTest)

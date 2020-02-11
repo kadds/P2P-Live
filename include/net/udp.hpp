@@ -12,7 +12,8 @@ class socket_t;
 namespace net::udp
 {
 class client_t;
-using handler_t = std::function<void(client_t &)>;
+class server_t;
+using server_at_connect_handler = std::function<void(server_t &)>;
 
 class server_t
 {
@@ -23,7 +24,7 @@ class server_t
     ~server_t();
     socket_t *get_socket() const { return socket; }
     socket_t *bind(event_context_t &context, socket_addr_t addr, bool reuse_port = false);
-
+    void run(std::function<void()> func);
     void close();
 };
 
@@ -39,9 +40,11 @@ class client_t
     socket_t *get_socket() const { return socket; }
 
     void connect(event_context_t &context, socket_addr_t addr, bool remote_address_bind_to_socket = true);
+    void run(std::function<void()> func);
     void close();
     socket_addr_t get_address() const;
 };
+
 class connectable_server_t;
 using msg_recv_handler_t = std::function<void(connectable_server_t &, socket_buffer_t, socket_addr_t)>;
 

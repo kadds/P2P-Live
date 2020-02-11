@@ -23,8 +23,10 @@ using u16 = uint16_t;
 using i8 = int8_t;
 using u8 = uint8_t;
 
-inline constexpr int p2p_port = 1238;
-inline constexpr int command_port = 1237;
+inline constexpr int p2p_context_server_port = 2750;
+inline constexpr int p2p_front_server_port = 2751;
+inline constexpr int p2p_front_server_context_port = 2752;
+inline constexpr int p2p_client_rudp_port = 2780;
 
 void init_lib();
 enum io_result
