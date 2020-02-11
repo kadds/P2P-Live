@@ -31,10 +31,11 @@ class MainWindow : public QMainWindow
     int ErrorExit(string errorStr);
 
     void show_dshow_device();
+    int RGBToYUV(int width, int height);
+
     inline double r2d(AVRational r);
     int demux(char* pInputFile,char* pOutputVideoFile,char* pOutputAudioFile);
-    int RGBToYUV(int width, int height);
-    int SDL(FILE *f,int width,int height);
+    int SDL(uint8_t *YPlane,uint8_t *UPlane,uint8_t *VPlane, int width, int height,int fps);
     
     ~MainWindow();
 

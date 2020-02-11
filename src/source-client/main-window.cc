@@ -10,6 +10,10 @@
 int codec_id_Video, codec_id_Audio;     // SDL播放辨别的Video格式
 int index_Video = -1, index_Audio = -1; //解码时对应的视频音频标记（video是1，audio是0
 int width_Video, height_Video;
+SDL_Window *sdl_screen = NULL;
+SDL_Renderer *sdl_renderer = NULL;
+SDL_Texture *sdl_texture = NULL;
+SDL_Rect sdl_rect;
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -18,8 +22,9 @@ MainWindow::MainWindow(QWidget *parent)
     // ui->setupUi(this);
     // this->setWindowTitle("P2P Live");
     show_dshow_device();
-    demux("test.mp4", "outvideo", "outaudio");
+    demux("test.flv", "outvideo", "outaudio");
     // SDL();
+    // RGBToYUV(320,568);
     std::cout << "程序正常运行" << std::endl;
 }
 
@@ -58,7 +63,7 @@ int MainWindow::RGBToYUV(int width, int height)
     yuv->height = inHeight;
     yuv->pts = 0;                          //显示时间戳
     int re = av_frame_get_buffer(yuv, 32); //分配yuv空间
-    if (!re)
+    if (re != 0)
         ErrorExit(re);
 
     //输入的数据结构
@@ -80,11 +85,12 @@ int MainWindow::demux(char *pInputFile, char *pOutputVideoFile, char *pOutputAud
 {
     AVFormatContext *pAVFC = avformat_alloc_context();
     AVCodecContext *pAVCC;
-    AVPacket *pAVP=av_packet_alloc();
-AVFrame *pAVF=av_frame_alloc();
+    AVPacket *pAVP = av_packet_alloc();
+    AVFrame *pAVF = av_frame_alloc();
+    AVFrame *pAVF_YUV = av_frame_alloc();
 
-    //av_register_all();
-    //avcodec_register_all();
+    // av_register_all();//旧版本函数已弃用
+    // avcodec_register_all();//旧版本函数已弃用
     int re = avformat_open_input(&pAVFC, pInputFile, 0, 0);
     if (re < 0)
     {
@@ -132,7 +138,7 @@ AVFrame *pAVF=av_frame_alloc();
             // cout << "音频压缩编码格式:" << codec_id << endl;
             cout << "音频总时长：" << h << "时" << m << "分" << s << "秒" << endl;
         }
-        else if (AVMEDIA_TYPE_VIDEO == pAVS->codecpar->codec_type) //如果是视频流，则打印视频的信息
+        else if (pAVS->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) //如果是视频流，则打印视频的信息
         {
             /*string codec_id; //压缩编码格式
             if (pAVS->codecpar->codec_id==AV_CODEC_ID_MPEG4  ){
@@ -161,11 +167,17 @@ AVFrame *pAVF=av_frame_alloc();
         else
             std::cout << "压缩编码格式:" << pAVC->name << std::endl;
 
-        //if(AVMEDIA_TYPE_VIDEO == pAVS->codecpar->codec_type){
+        if (AVMEDIA_TYPE_VIDEO == pAVS->codecpar->codec_type)
+        {
+
             pAVCC = avcodec_alloc_context3(pAVC);
-            re = avcodec_parameters_to_context(pAVCC,pAVS->codecpar);
+            // pAVCC = pAVFC->streams[i]->codec;
+
+            re = avcodec_parameters_to_context(pAVCC, pAVS->codecpar);
             if (!pAVCC)
                 ErrorExit("分配编码器失败");
+            /**
+             * 编码内容
             pAVCC->flags |= AV_CODEC_FLAG_GLOBAL_HEADER; //便于输出获取
             pAVCC->codec_id = pAVC->id;
             pAVCC->thread_count = 2; //线程数量
@@ -180,7 +192,7 @@ AVFrame *pAVF=av_frame_alloc();
             //画面组大小，多少帧一个关键帧
             pAVCC->gop_size = 50;
             pAVCC->max_b_frames = 0; //最大b帧
-            pAVCC->pix_fmt = AV_PIX_FMT_YUV420P;
+            pAVCC->pix_fmt = AV_PIX_FMT_YUV420P;*/
 
             int re = avcodec_open2(pAVCC, pAVC, nullptr);
             if (re != 0)
@@ -189,66 +201,95 @@ AVFrame *pAVF=av_frame_alloc();
                 ErrorExit("打开编码器失败");
             }
             else
-                cout<<"打开编码器成功"<<endl;
-
+                cout << "打开编码器成功" << endl;
+        }
     }
 
     av_init_packet(pAVP);
-    //pAVP->data = NULL;
-    //pAVP->size = 0;
+    cout << pAVCC->width << " " << pAVCC->height;
 
+    SwsContext *pSC = NULL;
+    pSC = sws_getCachedContext(pSC, pAVCC->width, pAVCC->height, pAVCC->pix_fmt, //源
+                               pAVCC->width, pAVCC->height, AV_PIX_FMT_YUV420P,  //目标
+                               SWS_BICUBIC,                                      //尺寸变化算法
+                               0, 0, 0);
+    uint8_t *out_buffer = (uint8_t *)av_malloc(avpicture_get_size(AV_PIX_FMT_YUV420P, pAVCC->width, pAVCC->height));
+    avpicture_fill((AVPicture *)pAVF_YUV, out_buffer, AV_PIX_FMT_YUV420P, pAVCC->width, pAVCC->height);
+    // av_image_fill_arrays();
 
-    int i=0;
+    // FILE *out=fopen("out_test.yuv","wb");
+    /**
+     * SDL
+     *
+     */
+
+    if (SDL_Init(SDL_INIT_VIDEO)) //成功，非0
+        ErrorExit("SDL init error");
+    sdl_screen = SDL_CreateWindow("new sdl window", 0, 0, pAVCC->width, pAVCC->height, SDL_WINDOW_RESIZABLE);
+    if (sdl_screen == NULL)
+        ErrorExit("SDL window error");
+
+    sdl_renderer = SDL_CreateRenderer(sdl_screen, -1, 0);
+    if (!sdl_renderer)
+        ErrorExit("SDL render error");
+
+    sdl_texture =
+        SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_YV12, SDL_TEXTUREACCESS_TARGET, pAVCC->width, pAVCC->height);
+    if (!sdl_texture)
+        ErrorExit("SDL sdl_texture");
+
     while (av_read_frame(pAVFC, pAVP) >= 0)
     {
-        if (pAVP->stream_index == index_Video){
-            int frameFinished=0;
-            int len=avcodec_decode_video2(pAVCC, pAVF, &frameFinished, pAVP);
-            cout<<len<<" "<<frameFinished<<endl;
+
+        if (pAVP->stream_index == index_Video)
+        {
+            // int frameFinished=0;
+            // int len=avcodec_decode_video2(pAVCC, pAVF, &frameFinished, pAVP);弃用
+            re = avcodec_send_packet(pAVCC, pAVP);
+            cout << "send:" << re << " ";
+
+            av_packet_unref(pAVP);
+
+            re = avcodec_receive_frame(pAVCC, pAVF);
+            cout << "receive:" << re << " " << endl;
+            if (re == 0)
+            {
+
+                sws_scale(pSC, pAVF->data, pAVF->linesize, 0, pAVCC->height, pAVF_YUV->data, pAVF_YUV->linesize);
+                /*fwrite(pAVF_YUV->data[0],1,pAVCC->width*pAVCC->height,out);//输出Y数据
+                fwrite(pAVF_YUV->data[1],1,pAVCC->width*pAVCC->height/4,out);//输出U数据
+                fwrite(pAVF_YUV->data[2],1,pAVCC->width*pAVCC->height/4,out);//输出V数据*/
+                SDL(pAVF_YUV->data[0], pAVF_YUV->data[1], pAVF_YUV->data[2], pAVCC->width, pAVCC->height, 25);
+            }
         }
         else if (pAVP->stream_index == index_Audio)
         {
+            cout << "~~~" << endl;
         }
         else
             cout << "其他帧";
-
     }
 
+    SDL_DestroyWindow(sdl_screen);
+    SDL_Quit();
     return 0;
 }
 
 //播放yuv文件时：尺寸和帧率需要设置
-int MainWindow::SDL(FILE *f, int width, int height)
+int MainWindow::SDL(uint8_t *YPlane, uint8_t *UPlane, uint8_t *VPlane, int width, int height, int fps)
 {
-    if (SDL_Init(SDL_INIT_VIDEO)) //成功，非0
-        ErrorExit("SDL init error");
-    SDL_Window *screen = SDL_CreateWindow("new sdl window", 0, 0, WIDTH, HEIGHT, SDL_WINDOW_RESIZABLE);
-    if (screen == NULL)
-        ErrorExit("SDL window error");
-
-    SDL_Renderer *renderer = SDL_CreateRenderer(screen, -1, 0);
-    if (!renderer)
-        ErrorExit("SDL render error");
-
-    SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_YV12, SDL_TEXTUREACCESS_TARGET, WIDTH, HEIGHT);
-    if (!texture)
-        ErrorExit("SDL texture");
-
-    SDL_Rect rect;
-
+    //文件直接播放改为ffmpeg解码播放
     // FILE *f = fopen("352_288.yuv", "rb+");
     // if (f == NULL)  ErrorExit( "file open error");
     // if(codec_id_Video)
 
     // unsigned char buffer[PIXEL_HEIGHT * PIXEL_WIDTH * BPP / 8];
-    unsigned char *YPlane = (unsigned char *)malloc(WIDTH * HEIGHT);
-    unsigned char *UPlane = (unsigned char *)malloc(WIDTH * HEIGHT / 4);
-    unsigned char *VPlane = (unsigned char *)malloc(WIDTH * HEIGHT / 4);
 
-    unsigned char *videoDstData[4];
-    int videoLineSize[4];
-    int videoBufferSize;
+    /*unsigned char *YPlane = (unsigned char *)malloc(width * height);
+    unsigned char *UPlane = (unsigned char *)malloc(width * height / 4);
+    unsigned char *VPlane = (unsigned char *)malloc(width * height / 4);*/
 
+    /*
     while (1)
     {
         int sizeY = fread(YPlane, 1, WIDTH * HEIGHT, f);
@@ -256,24 +297,24 @@ int MainWindow::SDL(FILE *f, int width, int height)
         int sizeV = fread(VPlane, 1, WIDTH * HEIGHT / 4, f);
         if (!sizeY || !sizeU || !sizeV)
             break;
+
         std::cout << sizeY << " " << sizeU << " " << sizeV << std::endl;
+*/
+    int re = SDL_UpdateYUVTexture(sdl_texture, NULL, YPlane, width, UPlane, width / 2, VPlane, width / 2);
+    if (re)
+        std::cout << "SDL update error: " << SDL_GetError() << std::endl;
+    sdl_rect.x = 0;
+    sdl_rect.y = 0;
+    sdl_rect.h = height;
+    sdl_rect.w = width;
 
-        int re = SDL_UpdateYUVTexture(texture, NULL, YPlane, WIDTH, UPlane, WIDTH / 2, VPlane, WIDTH / 2);
-        if (re)
-            std::cout << "SDL update error: " << SDL_GetError() << std::endl;
-        rect.x = 0;
-        rect.y = 0;
-        rect.h = HEIGHT;
-        rect.w = WIDTH;
+    SDL_RenderClear(sdl_renderer);
+    SDL_RenderCopy(sdl_renderer, sdl_texture, NULL, &sdl_rect);
+    SDL_RenderPresent(sdl_renderer);
+    SDL_Delay(fps);
+    /*}
+    fclose(f);*/
 
-        SDL_RenderClear(renderer);
-        SDL_RenderCopy(renderer, texture, NULL, &rect);
-        SDL_RenderPresent(renderer);
-        SDL_Delay(25);
-    }
-    fclose(f);
-    SDL_DestroyWindow(screen);
-    SDL_Quit();
     return 0;
 }
 
