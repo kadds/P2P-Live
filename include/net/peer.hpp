@@ -69,11 +69,11 @@ struct peer_data_package_t
 {
     u8 type;
     u8 none;
-    u8 size;
+    u16 size;
     u32 package_id;
     u64 data_id;
-    u8 data[1472];
-    using member_list_t = serialization::typelist_t<u8, u8, u8, u32, u64>;
+    u8 data[0];
+    using member_list_t = serialization::typelist_t<u8, u8, u16, u32, u64>;
 };
 
 #pragma pack(pop)
@@ -128,7 +128,7 @@ class peer_client_t
     peer_client_t &at_peer_disconnect(peer_disconnect_t handler);
     peer_client_t &at_peer_connect(peer_connect_ok_t handler);
 
-    void request_data_from_peer(u64 data_id);
+    void pull_data_from_peer(u64 data_id);
 };
 
 class peer_server_t;
@@ -169,7 +169,9 @@ class peer_server_t
     peer_server_t &operator=(const peer_server_t &) = delete;
     void bind_server(event_context_t &context, socket_addr_t addr, bool reuse_addr = false);
     peer_server_t &at_client_join(client_join_handler_t handler);
-    peer_server_t &at_request_data(client_data_request_handler_t handler);
+    peer_server_t &at_client_pull(client_data_request_handler_t handler);
+
+    void send_package_to_peer(speer_t *peer, u64 data_id, socket_buffer_t buffer);
 };
 
 } // namespace net::peer

@@ -22,18 +22,24 @@ class socket_buffer_t
 {
     byte *ptr;
     u64 buffer_len;
+    // valid data length
     u64 data_len;
+    // process length in socket
     u64 current_process;
+    // process offset set when application protocol decode
     u64 walk_offset;
     friend struct except_buffer_helper_t;
 
   public:
     socket_buffer_t(std::string str);
     socket_buffer_t(u64 len);
-    socket_buffer_t(socket_buffer_t &&buffer);
     socket_buffer_t(const socket_buffer_t &) = delete;
     socket_buffer_t &operator=(const socket_buffer_t &) = delete;
-    socket_buffer_t &operator=(socket_buffer_t &&buffer);
+
+    // move operation
+    socket_buffer_t(socket_buffer_t &&buf);
+    socket_buffer_t &operator()(socket_buffer_t &&buf);
+
     ~socket_buffer_t();
 
     byte *get_raw_ptr() const { return ptr; }
@@ -46,6 +52,7 @@ class socket_buffer_t
     void set_process_length(u64 len) { current_process = len; }
     void end_process() { data_len = current_process; }
 
+    // except size to read/write
     except_buffer_helper_t expect()
     {
         walk_offset = 0;
@@ -55,6 +62,7 @@ class socket_buffer_t
     long write_string(const std::string &str);
     std::string to_string() const;
 
+    /// walk in buffer
     void walk_step(u64 delta)
     {
         walk_offset += delta;

@@ -55,7 +55,10 @@ void peer_client_t::client_main(peer_t *peer)
     }
 
     socket_buffer_t recv_buffer(1472);
-    peer_data_package_t data;
+    /// HACK: how can i use unique ptr safety.
+    std::unique_ptr<char[]> data(new char[sizeof(peer_data_package_t) + 1472]);
+
+    peer_data_package_t *package = (peer_data_package_t *)data.get();
     while (1)
     {
         socket_addr_t addr;
@@ -73,9 +76,11 @@ void peer_client_t::client_main(peer_t *peer)
         }
         else if (type == peer_msg_type::data_package)
         {
-            endian::cast_to(recv_buffer, data);
+            endian::cast_to(recv_buffer, *package);
+            memcpy(&package->data, recv_buffer.get_raw_ptr() + sizeof(peer_data_package_t),
+                   recv_buffer.get_data_length() - sizeof(peer_data_package_t));
             if (handler)
-                handler(*this, data, peer);
+                handler(*this, *package, peer);
         }
         else if (type == peer_msg_type::heart) // heart
         {
@@ -104,12 +109,23 @@ peer_client_t &peer_client_t::at_peer_data_recv(peer_server_data_recv_t handler)
     return *this;
 }
 
-void peer_client_t::request_data_from_peer(u64 data_id)
+void peer_client_t::pull_data_from_peer(u64 data_id)
 {
+    /// here make a choice to select a peer to pull data
+
     auto idx = rand() % peers.size();
     auto peer = peers[idx].get();
     peer->current_request_data_id = data_id;
     peer->in_request = true;
+    peer_data_request_t request;
+    request.data_id = data_id;
+    request.priority = 0;
+    request.type = peer_msg_type::data_request;
+    socket_buffer_t buffer(sizeof(request));
+    buffer.expect().origin_length();
+    assert(endian::save_to(request, buffer));
+    // pull data;
+    co::await(socket_awrite_to, peer->udp.get_socket(), buffer, peer->remote_address);
 }
 
 /// server-------------------------------------------------------------------------------------------
@@ -131,6 +147,7 @@ void peer_server_t::server_main()
                 auto peer = std::make_unique<speer_t>();
                 peer->last_online_timestamp = get_timestamp();
                 peer->ping_ok = true;
+                peer->address = addr;
                 auto ptr = peer.get();
                 peers_map.emplace(addr, std::move(peer));
                 peer_init_respond_t respond;
@@ -182,10 +199,30 @@ peer_server_t &peer_server_t::at_client_join(client_join_handler_t handler)
     return *this;
 }
 
-peer_server_t &peer_server_t::at_request_data(client_data_request_handler_t handler)
+peer_server_t &peer_server_t::at_client_pull(client_data_request_handler_t handler)
 {
     data_handler = handler;
     return *this;
+}
+
+void peer_server_t::send_package_to_peer(speer_t *peer, u64 data_id, socket_buffer_t buffer)
+{
+    auto socket = server.get_socket();
+    /// split package
+    peer_data_package_t package;
+    package.type = peer_msg_type::data_package;
+    package.data_id = data_id;
+    package.package_id = 1;
+    package.size = buffer.get_data_length();
+
+    socket_buffer_t send_buffer(sizeof(package) + buffer.get_data_length());
+    send_buffer.expect().origin_length();
+
+    assert(endian::save_to(package, send_buffer));
+    memcpy(send_buffer.get_raw_ptr() + sizeof(package), buffer.get_raw_ptr(), buffer.get_data_length());
+    byte v = send_buffer.get_raw_ptr()[sizeof(package)];
+    /// TODO: split
+    co::await(socket_awrite_to, socket, send_buffer, peer->address);
 }
 
 } // namespace net::peer

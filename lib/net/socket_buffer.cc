@@ -42,26 +42,31 @@ socket_buffer_t::socket_buffer_t(socket_buffer_t &&buffer)
     this->current_process = buffer.current_process;
     this->data_len = buffer.data_len;
     this->buffer_len = buffer.buffer_len;
+    this->walk_offset = buffer.walk_offset;
 
     buffer.ptr = nullptr;
     buffer.current_process = 0;
     buffer.data_len = 0;
     buffer.buffer_len = 0;
+    buffer.walk_offset = 0;
 }
 
-socket_buffer_t &socket_buffer_t::operator=(socket_buffer_t &&buffer)
+socket_buffer_t &socket_buffer_t::operator()(socket_buffer_t &&buf)
 {
-    if (ptr)
+    if (this->ptr)
         delete[] ptr;
-    this->ptr = buffer.ptr;
-    this->current_process = buffer.current_process;
-    this->data_len = buffer.data_len;
-    this->buffer_len = buffer.buffer_len;
 
-    buffer.ptr = nullptr;
-    buffer.current_process = 0;
-    buffer.data_len = 0;
-    buffer.buffer_len = 0;
+    this->ptr = buf.ptr;
+    this->current_process = buf.current_process;
+    this->data_len = buf.data_len;
+    this->buffer_len = buf.buffer_len;
+    this->walk_offset = buf.walk_offset;
+
+    buf.ptr = nullptr;
+    buf.current_process = 0;
+    buf.data_len = 0;
+    buf.buffer_len = 0;
+    buf.walk_offset = 0;
     return *this;
 }
 
