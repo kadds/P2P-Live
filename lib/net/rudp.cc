@@ -1,6 +1,5 @@
 #include "net/rudp.hpp"
-#include "net/socket.hpp"
-namespace net::rudp
+namespace net
 {
 
-} // namespace net::rudp
+} // namespace net
