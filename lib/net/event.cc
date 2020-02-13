@@ -147,7 +147,7 @@ event_loop_t *event_context_t::remove_socket(socket_t *socket)
 
 timer_id event_loop_t::add_timer(timer_t timer) { return time_manager->insert(timer); }
 
-void event_loop_t::remove_timer(timer_t timer, timer_id id) { time_manager->cancel(timer, id); }
+void event_loop_t::remove_timer(microsecond_t timepoint, timer_id id) { time_manager->cancel(timepoint, id); }
 
 void event_context_t::add_event_loop(event_loop_t *loop)
 {

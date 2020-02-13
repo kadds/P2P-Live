@@ -88,6 +88,15 @@ class coroutine_t
         context = std::move(context).resume();
     }
 
+    // switch to this and call func
+    void resume_with(std::function<void()> func)
+    {
+        prev = co_cur;
+
+        co_cur = this;
+        context = std::move(context).resume_with(std::bind(co_reschedule_wrapper, std::placeholders::_1, this, func));
+    }
+
     static void yield()
     {
         coroutine_t *cur = current();

@@ -56,9 +56,9 @@ timer_id time_manager_t::insert(timer_t timer)
     return it->second->callbacks.size();
 }
 
-void time_manager_t::cancel(timer_t timer, timer_id id)
+void time_manager_t::cancel(microsecond_t timepoint, timer_id id)
 {
-    auto it = map.find(timer.timepoint);
+    auto it = map.find(timepoint);
     if (it != map.end())
     {
         it->second->callbacks[id].second = false;

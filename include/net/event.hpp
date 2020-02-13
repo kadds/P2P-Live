@@ -102,7 +102,7 @@ class event_loop_t
     event_loop_t &link(socket_t *socket_t, event_type_t type);
     event_loop_t &unlink(socket_t *socket_t, event_type_t type);
     timer_id add_timer(timer_t timer);
-    void remove_timer(timer_t timer, timer_id);
+    void remove_timer(microsecond_t timepoint, timer_id);
 
     static event_loop_t &current();
 };

@@ -55,7 +55,7 @@ struct time_manager_t
 
     void tick();
     timer_id insert(timer_t timer);
-    void cancel(timer_t timer, timer_id id);
+    void cancel(microsecond_t timepoint, timer_id id);
     microsecond_t next_tick_timepoint();
 };
 

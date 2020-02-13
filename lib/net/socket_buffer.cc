@@ -23,6 +23,7 @@ socket_buffer_t::socket_buffer_t(std::string str)
     , data_len(0)
     , current_process(0)
     , walk_offset(0)
+    , own_ptr(true)
 {
     memcpy(ptr, str.c_str(), str.size());
 }
@@ -33,6 +34,17 @@ socket_buffer_t::socket_buffer_t(u64 len)
     , data_len(0)
     , current_process(0)
     , walk_offset(0)
+    , own_ptr(true)
+{
+}
+
+socket_buffer_t::socket_buffer_t(byte *buffer_ptr, u64 buffer_length)
+    : ptr(buffer_ptr)
+    , buffer_len(buffer_length)
+    , data_len(0)
+    , current_process(0)
+    , walk_offset(0)
+    , own_ptr(false)
 {
 }
 
@@ -43,12 +55,14 @@ socket_buffer_t::socket_buffer_t(socket_buffer_t &&buffer)
     this->data_len = buffer.data_len;
     this->buffer_len = buffer.buffer_len;
     this->walk_offset = buffer.walk_offset;
+    this->own_ptr = buffer.own_ptr;
 
     buffer.ptr = nullptr;
     buffer.current_process = 0;
     buffer.data_len = 0;
     buffer.buffer_len = 0;
     buffer.walk_offset = 0;
+    buffer.own_ptr = false;
 }
 
 socket_buffer_t &socket_buffer_t::operator()(socket_buffer_t &&buf)
@@ -61,18 +75,21 @@ socket_buffer_t &socket_buffer_t::operator()(socket_buffer_t &&buf)
     this->data_len = buf.data_len;
     this->buffer_len = buf.buffer_len;
     this->walk_offset = buf.walk_offset;
+    this->own_ptr = buf.own_ptr;
 
     buf.ptr = nullptr;
     buf.current_process = 0;
     buf.data_len = 0;
     buf.buffer_len = 0;
     buf.walk_offset = 0;
+    buf.own_ptr = false;
+
     return *this;
 }
 
 socket_buffer_t::~socket_buffer_t()
 {
-    if (ptr)
+    if (ptr && own_ptr)
         delete[] ptr;
 }
 

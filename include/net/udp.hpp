@@ -40,6 +40,9 @@ class client_t
     socket_t *get_socket() const { return socket; }
 
     void connect(event_context_t &context, socket_addr_t addr, bool remote_address_bind_to_socket = true);
+
+    /// must call 'connect' befor call it.
+    ///
     void run(std::function<void()> func);
     void close();
     socket_addr_t get_address() const;

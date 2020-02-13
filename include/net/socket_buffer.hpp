@@ -28,11 +28,14 @@ class socket_buffer_t
     u64 current_process;
     // process offset set when application protocol decode
     u64 walk_offset;
+    bool own_ptr;
+
     friend struct except_buffer_helper_t;
 
   public:
     socket_buffer_t(std::string str);
     socket_buffer_t(u64 len);
+    socket_buffer_t(byte *buffer_ptr, u64 buffer_length);
     socket_buffer_t(const socket_buffer_t &) = delete;
     socket_buffer_t &operator=(const socket_buffer_t &) = delete;
 
