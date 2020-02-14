@@ -42,7 +42,7 @@ template <typename T> class async_result_t
 
 class coroutine_t;
 
-__thread inline coroutine_t *co_cur = nullptr;
+thread_local inline coroutine_t *co_cur = nullptr;
 
 constexpr int stack_size = 1 << 16;
 
@@ -65,6 +65,9 @@ class coroutine_t
         : context(std::bind(co_wrapper, std::placeholders::_1, this))
         , func(f)
         , prev(nullptr){};
+
+    coroutine_t(const coroutine_t &) = delete;
+    coroutine_t &operator=(const coroutine_t &) = delete;
 
     static coroutine_t *create(std::function<void()> f)
     {
