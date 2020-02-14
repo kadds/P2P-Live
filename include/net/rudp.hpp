@@ -35,12 +35,12 @@ class rudp_t
     /// call bind before call this function
     void run(std::function<void()> func);
 
-    co::async_result_t<io_result> awrite(socket_buffer_t &buffer);
-    co::async_result_t<io_result> aread(socket_buffer_t &buffer);
+    co::async_result_t<io_result> awrite(co::paramter_t &param, socket_buffer_t &buffer);
+    co::async_result_t<io_result> aread(co::paramter_t &param, socket_buffer_t &buffer);
 };
 
 // wrapper functions
-co::async_result_t<io_result> rudp_awrite(rudp_t *rudp, socket_buffer_t &buffer);
-co::async_result_t<io_result> rudp_aread(rudp_t *rudp, socket_buffer_t &buffer);
+co::async_result_t<io_result> rudp_awrite(co::paramter_t &param, rudp_t *rudp, socket_buffer_t &buffer);
+co::async_result_t<io_result> rudp_aread(co::paramter_t &param, rudp_t *rudp, socket_buffer_t &buffer);
 
 } // namespace net

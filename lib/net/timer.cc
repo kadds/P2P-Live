@@ -40,11 +40,7 @@ void time_manager_t::tick()
 timer_id time_manager_t::insert(timer_t timer)
 {
     timer.timepoint = (timer.timepoint + precision - 1) / precision * precision;
-    if (timer.timepoint <= get_current_time())
-    {
-        timer.callback();
-        return -1;
-    }
+
     auto it = map.find(timer.timepoint);
     if (it == map.end())
     {
@@ -61,7 +57,7 @@ void time_manager_t::cancel(microsecond_t timepoint, timer_id id)
     auto it = map.find(timepoint);
     if (it != map.end())
     {
-        it->second->callbacks[id].second = false;
+        it->second->callbacks[id - 1].second = false;
     }
 }
 

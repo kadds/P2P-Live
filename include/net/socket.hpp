@@ -26,8 +26,8 @@ class socket_t
     event_type_t current_event;
     event_loop_t *loop;
 
-    friend co::async_result_t<io_result> connect_to(socket_t *socket, socket_addr_t socket_to_addr, int timeout_ms);
-    friend co::async_result_t<socket_t *> accept_from(socket_t *in);
+    friend co::async_result_t<io_result> connect_to(co::paramter_t &, socket_t *, socket_addr_t);
+    friend co::async_result_t<socket_t *> accept_from(co::paramter_t &, socket_t *in);
     friend class event_loop_t;
 
   private:
@@ -43,11 +43,11 @@ class socket_t
     socket_t(const socket_t &) = delete;
     socket_t &operator=(const socket_t &) = delete;
 
-    co::async_result_t<io_result> awrite(socket_buffer_t &buffer);
-    co::async_result_t<io_result> aread(socket_buffer_t &buffer);
+    co::async_result_t<io_result> awrite(co::paramter_t &, socket_buffer_t &buffer);
+    co::async_result_t<io_result> aread(co::paramter_t &, socket_buffer_t &buffer);
 
-    co::async_result_t<io_result> awrite_to(socket_buffer_t &buffer, socket_addr_t target);
-    co::async_result_t<io_result> aread_from(socket_buffer_t &buffer, socket_addr_t &target);
+    co::async_result_t<io_result> awrite_to(co::paramter_t &, socket_buffer_t &buffer, socket_addr_t target);
+    co::async_result_t<io_result> aread_from(co::paramter_t &, socket_buffer_t &buffer, socket_addr_t &target);
 
     /// sleep in current coroutine
     void sleep(microsecond_t span);
@@ -72,11 +72,13 @@ class socket_t
     co::coroutine_t *get_coroutine() const { return co; }
 };
 
-co::async_result_t<io_result> socket_awrite(socket_t *socket, socket_buffer_t &buffer);
-co::async_result_t<io_result> socket_aread(socket_t *socket, socket_buffer_t &buffer);
+co::async_result_t<io_result> socket_awrite(co::paramter_t &param, socket_t *socket, socket_buffer_t &buffer);
+co::async_result_t<io_result> socket_aread(co::paramter_t &param, socket_t *socket, socket_buffer_t &buffer);
 
-co::async_result_t<io_result> socket_awrite_to(socket_t *socket, socket_buffer_t &buffer, socket_addr_t target);
-co::async_result_t<io_result> socket_aread_from(socket_t *socket, socket_buffer_t &buffer, socket_addr_t &target);
+co::async_result_t<io_result> socket_awrite_to(co::paramter_t &param, socket_t *socket, socket_buffer_t &buffer,
+                                               socket_addr_t target);
+co::async_result_t<io_result> socket_aread_from(co::paramter_t &param, socket_t *socket, socket_buffer_t &buffer,
+                                                socket_addr_t &target);
 
 socket_t *new_tcp_socket();
 socket_t *new_udp_socket();
@@ -84,12 +86,12 @@ socket_t *new_udp_socket();
 socket_t *reuse_addr_socket(socket_t *socket, bool reuse);
 socket_t *reuse_port_socket(socket_t *socket, bool reuse);
 
-co::async_result_t<io_result> connect_to(socket_t *socket, socket_addr_t socket_to_addr, int timeout_ms);
-co::async_result_t<io_result> connect_udp(socket_t *socket, socket_addr_t socket_to_addr, int timeout_ms);
+co::async_result_t<io_result> connect_to(co::paramter_t &param, socket_t *socket, socket_addr_t socket_to_addr);
+co::async_result_t<io_result> connect_udp(co::paramter_t &param, socket_t *socket, socket_addr_t socket_to_addr);
 
 socket_t *bind_at(socket_t *socket, socket_addr_t socket_to_addr);
 socket_t *listen_from(socket_t *socket, int max_count);
-co::async_result_t<socket_t *> accept_from(socket_t *in);
+co::async_result_t<socket_t *> accept_from(co::paramter_t &param, socket_t *in);
 void close_socket(socket_t *socket);
 
 } // namespace net

@@ -1,4 +1,5 @@
 #pragma once
+#include "event.hpp"
 #include "net.hpp"
 #include <boost/context/fiber.hpp>
 #include <functional>
@@ -129,15 +130,87 @@ class coroutine_t
     }
 };
 
+class paramter_t
+{
+    /// how many times called
+    int times;
+    //. stop right now because timeout
+    bool stop;
+    void *user_ptr;
+
+  public:
+    paramter_t()
+        : times(0)
+        , stop(false)
+        , user_ptr(nullptr){};
+
+    bool is_stop() const { return stop; }
+    int get_times() const { return times; }
+    void set_user_ptr(void *ptr) { user_ptr = ptr; }
+    void *get_user_ptr() const { return user_ptr; }
+    void stop_wait() { stop = true; }
+    void add_times() { times++; }
+};
+
+/// async wait
+///
+///\tparam func function to async wait
+///\tparam args function args request
+///\return return function result when async wait ok
+///\note All Func with coroutine tag is not reentrant. Don't wait for function calls with the same parameters at the
+/// same time.
 template <typename Func, typename... Args> inline static auto await(Func func, Args &&... args)
 {
+    paramter_t param;
     while (1)
     {
-        auto ret = func(std::forward<Args>(args)...);
+        auto ret = func(param, std::forward<Args>(args)...);
         if (ret.is_finish())
         {
             return ret();
         }
+        param.add_times();
+        coroutine_t::yield();
+    }
+}
+
+/// async wait timeout
+///
+///\tparam func function to async wait
+///\tparam args function args request
+///\param span microseconds for maximum timeout
+///\return return function result when async wait ok
+///\note All Func with coroutine tag is not reentrant. Don't wait for function calls with the same parameters at the
+/// same time.
+template <typename Func, typename... Args>
+inline static auto await_timeout(microsecond_t span, Func func, Args &&... args)
+{
+    paramter_t param;
+    auto co = coroutine_t::current();
+    net::timer_id timerid;
+    microsecond_t timepoint;
+    while (1)
+    {
+        auto ret = func(param, std::forward<Args>(args)...);
+        if (ret.is_finish())
+        {
+            if (param.get_times() != 0)
+            {
+                event_loop_t::current().remove_timer(timepoint, timerid);
+            }
+            return ret();
+        }
+        if (param.get_times() == 0)
+        {
+            auto timer = make_timer(span, [co, &param]() {
+                param.stop_wait();
+                /// XXX: coroutine may destroy by main thread
+                co->resume();
+            });
+            timepoint = timer.timepoint;
+            timerid = event_loop_t::current().add_timer(timer);
+        }
+        param.add_times();
         coroutine_t::yield();
     }
 }

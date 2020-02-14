@@ -101,8 +101,14 @@ io_result socket_t::read_async(socket_buffer_t &buffer)
     return io_result::ok;
 }
 
-co::async_result_t<io_result> socket_t::awrite(socket_buffer_t &buffer)
+co::async_result_t<io_result> socket_t::awrite(co::paramter_t &param, socket_buffer_t &buffer)
 {
+    if (param.is_stop())
+    {
+        remove_event(event_type::writable);
+        return io_result::timeout;
+    }
+
     if (is_connection_closed)
     {
         throw net_connect_exception("socket closed by peer", connection_state::closed);
@@ -121,8 +127,14 @@ co::async_result_t<io_result> socket_t::awrite(socket_buffer_t &buffer)
     return ret;
 }
 
-co::async_result_t<io_result> socket_t::aread(socket_buffer_t &buffer)
+co::async_result_t<io_result> socket_t::aread(co::paramter_t &param, socket_buffer_t &buffer)
 {
+    if (param.is_stop())
+    {
+        remove_event(event_type::readable);
+        return io_result::timeout;
+    }
+
     if (is_connection_closed)
     {
         throw net_connect_exception("socket closed by peer", connection_state::closed);
@@ -204,25 +216,38 @@ io_result socket_t::read_pack(socket_buffer_t &buffer, socket_addr_t &target)
     return io_result::ok;
 }
 
-co::async_result_t<io_result> socket_t::awrite_to(socket_buffer_t &buffer, socket_addr_t target)
+co::async_result_t<io_result> socket_t::awrite_to(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t target)
 {
+    if (param.is_stop())
+    {
+        remove_event(event_type::writable);
+        return io_result::timeout;
+    }
     auto ret = write_pack(buffer, target);
     if (ret == io_result::cont)
     {
         add_event(event_type::writable);
         return co::async_result_t<io_result>();
     }
+    remove_event(event_type::writable);
     return ret;
 }
 
-co::async_result_t<io_result> socket_t::aread_from(socket_buffer_t &buffer, socket_addr_t &target)
+co::async_result_t<io_result> socket_t::aread_from(co::paramter_t &param, socket_buffer_t &buffer,
+                                                   socket_addr_t &target)
 {
+    if (param.is_stop())
+    {
+        remove_event(event_type::readable);
+        return io_result::timeout;
+    }
     auto ret = read_pack(buffer, target);
     if (ret == io_result::cont)
     {
         add_event(event_type::readable);
         return co::async_result_t<io_result>();
     }
+    remove_event(event_type::readable);
     return ret;
 }
 
@@ -288,24 +313,26 @@ void socket_t::startup_coroutine(co::coroutine_t *co)
     co->resume();
 }
 
-co::async_result_t<io_result> socket_awrite(socket_t *socket, socket_buffer_t &buffer)
+co::async_result_t<io_result> socket_awrite(co::paramter_t &param, socket_t *socket, socket_buffer_t &buffer)
 {
-    return socket->awrite(buffer);
+    return socket->awrite(param, buffer);
 }
 
-co::async_result_t<io_result> socket_aread(socket_t *socket, socket_buffer_t &buffer)
+co::async_result_t<io_result> socket_aread(co::paramter_t &param, socket_t *socket, socket_buffer_t &buffer)
 {
     // async read wrapper
-    return socket->aread(buffer);
+    return socket->aread(param, buffer);
 }
 
-co::async_result_t<io_result> socket_awrite_to(socket_t *socket, socket_buffer_t &buffer, socket_addr_t target)
+co::async_result_t<io_result> socket_awrite_to(co::paramter_t &param, socket_t *socket, socket_buffer_t &buffer,
+                                               socket_addr_t target)
 {
-    return socket->awrite_to(buffer, target);
+    return socket->awrite_to(param, buffer, target);
 }
-co::async_result_t<io_result> socket_aread_from(socket_t *socket, socket_buffer_t &buffer, socket_addr_t &target)
+co::async_result_t<io_result> socket_aread_from(co::paramter_t &param, socket_t *socket, socket_buffer_t &buffer,
+                                                socket_addr_t &target)
 {
-    return socket->aread_from(buffer, target);
+    return socket->aread_from(param, buffer, target);
 }
 
 socket_t *new_tcp_socket()
@@ -346,8 +373,14 @@ socket_t *reuse_port_socket(socket_t *socket, bool reuse)
     return socket;
 }
 
-co::async_result_t<io_result> connect_to(socket_t *socket, socket_addr_t socket_to_addr, int timeout_ms)
+co::async_result_t<io_result> connect_to(co::paramter_t &param, socket_t *socket, socket_addr_t socket_to_addr)
 {
+    if (param.is_stop())
+    {
+        socket->remove_event(event_type::readable | event_type::writable);
+        return io_result::timeout;
+    }
+
     socklen_t len = sizeof(sockaddr_in);
     auto addr = socket_to_addr.get_raw_addr();
 
@@ -379,8 +412,14 @@ co::async_result_t<io_result> connect_to(socket_t *socket, socket_addr_t socket_
     return co::async_result_t<io_result>(io_result::ok);
 }
 
-co::async_result_t<io_result> connect_udp(socket_t *socket, socket_addr_t socket_to_addr, int timeout_ms)
+co::async_result_t<io_result> connect_udp(co::paramter_t &param, socket_t *socket, socket_addr_t socket_to_addr)
 {
+    if (param.is_stop())
+    {
+        socket->remove_event(event_type::readable | event_type::writable);
+        return io_result::timeout;
+    }
+
     socklen_t len = sizeof(sockaddr_in);
     auto addr = socket_to_addr.get_raw_addr();
 
@@ -431,8 +470,14 @@ socket_t *listen_from(socket_t *socket, int max_count)
     return socket;
 }
 
-co::async_result_t<socket_t *> accept_from(socket_t *socket)
+co::async_result_t<socket_t *> accept_from(co::paramter_t &param, socket_t *socket)
 {
+    if (param.is_stop())
+    {
+        socket->remove_event(event_type::readable);
+        return nullptr;
+    }
+
     int fd = accept(socket->get_raw_handle(), 0, 0);
     if (fd < 0)
     {

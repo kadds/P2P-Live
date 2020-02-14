@@ -9,6 +9,7 @@ enum class connection_state
     connection_refuse,
     address_in_used,
     no_resource,
+    timeout,
 };
 
 class net_connect_exception : public std::exception

@@ -1,4 +1,5 @@
 #include "net/rudp.hpp"
+#include "net/co.hpp"
 #include "net/event.hpp"
 #include "net/socket.hpp"
 #include "net/third/ikcp.hpp"
@@ -21,6 +22,7 @@ class rudp_impl_t
     microsecond_t next_time_point;
     /// set base time to aviod int overflow which used by kcp
     microsecond_t base_time;
+    bool is_await;
     void set_timer()
     {
         auto next_tick_time = ikcp_check(pcb, (get_current_time() - base_time) / 1000);
@@ -39,6 +41,10 @@ class rudp_impl_t
 
         timerid = socket->get_event_loop().add_timer(make_timer(next_time_point - get_current_time(), [this]() {
             ikcp_update(pcb, (get_current_time() - base_time) / 1000);
+            if (is_await)
+            {
+                socket->get_coroutine()->resume();
+            }
             set_timer();
         }));
     }
@@ -55,6 +61,7 @@ class rudp_impl_t
         ikcp_nodelay(pcb, 1, 50, 1, 0);
         base_time = get_current_time();
         timerid = -1;
+        is_await = false;
     }
 
     rudp_impl_t(const rudp_impl_t &) = delete;
@@ -73,7 +80,7 @@ class rudp_impl_t
 
     void connect_to_remote(socket_addr_t addr) { remote_addr = addr; }
 
-    co::async_result_t<io_result> awrite(socket_buffer_t &buffer)
+    co::async_result_t<io_result> awrite(co::paramter_t &param, socket_buffer_t &buffer)
     {
         assert(buffer.get_data_length() <= INT32_MAX);
         ikcp_send(pcb, (const char *)buffer.get_raw_ptr(), buffer.get_data_length());
@@ -81,25 +88,49 @@ class rudp_impl_t
         return io_result::ok;
     }
 
-    co::async_result_t<io_result> aread(socket_buffer_t &buffer)
+    co::async_result_t<io_result> aread(co::paramter_t &param, socket_buffer_t &buffer)
     {
+        if (param.is_stop()) /// stop timeout
+        {
+            is_await = false;
+            return io_result::timeout;
+        }
+
         socket_buffer_t recv_buffer(1472);
 
         recv_buffer.expect().origin_length();
         socket_addr_t target;
-        while (socket_aread_from(socket, recv_buffer, target).is_finish())
+
+        // read data no wait from kernel udp buffer
+        co::paramter_t param2;
+        while (socket_aread_from(param2, socket, recv_buffer, target).is_finish())
         {
             if (target == remote_addr)
-                ikcp_input(pcb, (char *)buffer.get_raw_ptr(), buffer.get_data_length());
+                ikcp_input(pcb, (char *)recv_buffer.get_raw_ptr(), recv_buffer.get_data_length());
+            else
+            {
+                /// TODO: invalid user connect to it. report an error or run a callback
+            }
+            // reset param
+            param2 = co::paramter_t();
+            recv_buffer.expect().origin_length();
         }
+        param2.stop_wait();
+        // stop recv aread event.
+        socket_aread_from(param, socket, recv_buffer, target);
 
+        // normal receive data from KCP
         auto len = ikcp_recv(pcb, (char *)buffer.get_raw_ptr(), buffer.get_data_length());
-        if (len < 0) // AGAIN
+        if (len < 0) // EAGAIN
         {
+            is_await = true;
+            // add event
             return co::async_result_t<io_result>();
         }
         buffer.set_process_length(len);
         buffer.end_process();
+        is_await = false;
+
         set_timer();
 
         return io_result::ok;
@@ -155,12 +186,24 @@ void rudp_t::run(std::function<void()> func) { kcp_impl->run(func); }
 
 /// wrappers -----------------------
 
-co::async_result_t<io_result> rudp_t::awrite(socket_buffer_t &buffer) { return kcp_impl->awrite(buffer); }
+co::async_result_t<io_result> rudp_t::awrite(co::paramter_t &param, socket_buffer_t &buffer)
+{
+    return kcp_impl->awrite(param, buffer);
+}
 
-co::async_result_t<io_result> rudp_t::aread(socket_buffer_t &buffer) { return kcp_impl->aread(buffer); }
+co::async_result_t<io_result> rudp_t::aread(co::paramter_t &param, socket_buffer_t &buffer)
+{
+    return kcp_impl->aread(param, buffer);
+}
 
-co::async_result_t<io_result> rudp_awrite(rudp_t *rudp, socket_buffer_t &buffer) { return rudp->awrite(buffer); }
+co::async_result_t<io_result> rudp_awrite(co::paramter_t &param, rudp_t *rudp, socket_buffer_t &buffer)
+{
+    return rudp->awrite(param, buffer);
+}
 
-co::async_result_t<io_result> rudp_aread(rudp_t *rudp, socket_buffer_t &buffer) { return rudp->awrite(buffer); }
+co::async_result_t<io_result> rudp_aread(co::paramter_t &param, rudp_t *rudp, socket_buffer_t &buffer)
+{
+    return rudp->awrite(param, buffer);
+}
 
 } // namespace net

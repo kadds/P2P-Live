@@ -24,19 +24,19 @@ void thread_main()
             while (1)
             {
                 buf.expect().origin_length();
-                net::co::await(std::bind(&net::socket_t::awrite, socket, std::placeholders::_1), buf);
+                net::co::await(net::socket_awrite, socket, buf);
                 read_data.expect().origin_length();
-                net::co::await(std::bind(&net::socket_t::aread, socket, std::placeholders::_1), read_data);
+                net::co::await(net::socket_aread, socket, read_data);
             }
         })
-        .at_server_connection_error([](net::tcp::client_t &client, net::socket_t *socket) {
+        .at_server_connection_error([](net::tcp::client_t &client, net::socket_t *socket, net::connection_state state) {
             std::cerr << "server connection failed! to " << client.get_connect_addr().to_string() << std::endl;
         })
         .at_server_disconnect([](net::tcp::client_t &client, net::socket_t *socket) {
             std::cout << "server connection closed! " << client.get_connect_addr().to_string() << std::endl;
         });
 
-    client.connect(context, net::socket_addr_t("127.0.0.1", 1233));
+    client.connect(context, net::socket_addr_t("127.0.0.1", 1233), net::make_timespan(1));
 
     looper.run();
 }
@@ -77,11 +77,11 @@ int main(int argc, char **argv)
             while (1)
             {
                 buffer.expect().origin_length();
-                net::co::await(std::bind(&net::socket_t::aread, socket, std::placeholders::_1), buffer);
+                net::co::await(net::socket_aread, socket, buffer);
                 buffer.expect().origin_length();
                 echo.expect().origin_length();
-                net::co::await(std::bind(&net::socket_t::awrite, socket, std::placeholders::_1), echo);
-                net::co::await(std::bind(&net::socket_t::awrite, socket, std::placeholders::_1), buffer);
+                net::co::await(net::socket_awrite, socket, echo);
+                net::co::await(net::socket_awrite, socket, buffer);
             }
         })
         .at_client_exit([](net::tcp::server_t &server, net::socket_t *socket) {

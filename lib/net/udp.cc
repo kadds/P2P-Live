@@ -47,7 +47,8 @@ void client_t::connect(event_context_t &context, socket_addr_t addr, bool remote
     context.add_socket(socket);
     if (remote_address_bind_to_socket)
     {
-        connect_udp(socket, addr, 0);
+        /// connect udp must return immediately.
+        co::await(connect_udp, socket, addr);
     }
 }
 

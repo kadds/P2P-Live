@@ -5,15 +5,8 @@
 
 namespace net::tcp
 {
-void none_func_s(server_t &server, socket_t *socket) {}
-void none_func_c(client_t &client, socket_t *socket) {}
 
-server_t::server_t()
-    : join_handler(none_func_s)
-    , exit_handler(none_func_s)
-    , error_handler(none_func_s)
-{
-}
+server_t::server_t() {}
 
 server_t::~server_t() { close_server(); }
 
@@ -22,13 +15,15 @@ void server_t::client_main(socket_t *socket)
     context->add_socket(socket);
     try
     {
-        join_handler(*this, socket);
+        if (join_handler)
+            join_handler(*this, socket);
     } catch (net::net_connect_exception &e)
     {
         if (e.get_state() != connection_state::closed)
         {
             std::cerr << e.what() << '\n';
-            error_handler(*this, socket);
+            if (error_handler)
+                error_handler(*this, socket, e.get_state());
         }
     }
     exit_client(socket);
@@ -64,8 +59,8 @@ void server_t::exit_client(socket_t *client)
 
     if (!client)
         return;
-
-    exit_handler(*this, client);
+    if (exit_handler)
+        exit_handler(*this, client);
 
     context->remove_socket(client);
     if (co::coroutine_t::in_coroutine(client->get_coroutine()))
@@ -110,52 +105,58 @@ server_t &server_t::at_client_exit(server_handler_t handler)
     return *this;
 }
 
-server_t &server_t::at_client_connection_error(server_handler_t handler)
+server_t &server_t::at_client_connection_error(server_error_handler_t handler)
 {
     error_handler = handler;
     return *this;
 }
 
-client_t::client_t()
-    : join_handler(none_func_c)
-    , exit_handler(none_func_c)
-    , error_handler(none_func_c)
-{
-}
+client_t::client_t() {}
 
 client_t::~client_t() { close(); }
 
-void client_t::wait_server(socket_addr_t address)
+void client_t::wait_server(socket_addr_t address, microsecond_t timeout)
 {
-    if (io_result::ok == co::await(connect_to, socket, address, 0))
+    auto ret = co::await_timeout(timeout, connect_to, socket, address);
+    if (io_result::ok == ret)
     {
         try
         {
-            join_handler(*this, socket);
+            if (join_handler)
+                join_handler(*this, socket);
         } catch (net::net_connect_exception &e)
         {
             if (e.get_state() != connection_state::closed)
             {
                 std::cerr << e.what() << '\n';
-                error_handler(*this, socket);
+                if (error_handler)
+                {
+                    error_handler(*this, socket, e.get_state());
+                }
             }
         }
     }
     else
     {
-        error_handler(*this, socket);
+        if (error_handler)
+        {
+            if (io_result::timeout == ret)
+                error_handler(*this, socket, connection_state::timeout);
+            else
+                error_handler(*this, socket, connection_state::closed);
+        }
     }
     close();
 }
 
-void client_t::connect(event_context_t &context, socket_addr_t address)
+void client_t::connect(event_context_t &context, socket_addr_t address, microsecond_t timeout)
 {
     this->context = &context;
     socket = new_tcp_socket();
     connect_addr = address;
 
     context.add_socket(socket);
-    auto cot = co::coroutine_t::create(std::bind(&client_t::wait_server, this, address));
+    auto cot = co::coroutine_t::create(std::bind(&client_t::wait_server, this, address, timeout));
     socket->startup_coroutine(cot);
 }
 
@@ -171,7 +172,7 @@ client_t &client_t::at_server_disconnect(client_handler_t handler)
     return *this;
 }
 
-client_t &client_t::at_server_connection_error(client_handler_t handler)
+client_t &client_t::at_server_connection_error(client_error_handler_t handler)
 {
     error_handler = handler;
     return *this;
@@ -181,8 +182,9 @@ void client_t::close()
 {
     if (!socket)
         return;
+    if (exit_handler)
+        exit_handler(*this, socket);
 
-    exit_handler(*this, socket);
     context->remove_socket(socket);
     if (co::coroutine_t::in_coroutine(socket->get_coroutine()))
     {

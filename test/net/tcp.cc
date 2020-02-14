@@ -38,8 +38,30 @@ TEST(TCPTest, TCPTestServerClient)
         })
         .at_server_disconnect([&loop](tcp::client_t &c, socket_t *socket) { loop.exit(0); });
 
-    client.connect(ctx, test_addr);
+    client.connect(ctx, test_addr, net::make_timespan(1));
 
     loop.run();
     server.close_server();
+}
+
+TEST(TCPTest, TCPTimeout)
+{
+    socket_addr_t test_addr("8.8.8.8", 2222);
+    event_context_t ctx(event_strategy::epoll);
+    event_loop_t loop;
+    ctx.add_event_loop(&loop);
+
+    tcp::client_t client;
+    client.at_server_connection_error([&loop](tcp::client_t &c, socket_t *socket, connection_state state) {
+        GTEST_ASSERT_EQ((int)state, (int)connection_state::timeout);
+        loop.exit(0);
+    });
+
+    client.connect(ctx, test_addr, net::make_timespan(1));
+    loop.add_timer(make_timer(make_timespan(1, 500, 0), [&loop]() {
+        loop.exit(-1);
+        std::string str = "timeout test failed";
+        GTEST_ASSERT_EQ(str, "");
+    }));
+    loop.run();
 }

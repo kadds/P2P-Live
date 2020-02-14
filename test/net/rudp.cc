@@ -48,7 +48,7 @@ TEST(RUDPTest, Interface)
             loop.exit(0);
         }
     });
-    loop.add_timer(make_timer(1000000, [&loop]() { loop.exit(-1); }));
+    loop.add_timer(make_timer(net::make_timespan(1), [&loop]() { loop.exit(-1); }));
     loop.run();
     GTEST_ASSERT_EQ(count_flag, 2);
 }

@@ -6,6 +6,7 @@
 #include <functional>
 #include <unordered_map>
 
+/// TODO: load balance server
 namespace net
 {
 #pragma pack(push, 1)

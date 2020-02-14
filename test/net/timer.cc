@@ -25,7 +25,7 @@ TEST(TimerTest, TimerShortTick)
     }));
     loop.run();
     GTEST_ASSERT_GE(point2 - point, span);
-    GTEST_ASSERT_LT(point2 - point, span + timer_min_precision);
+    GTEST_ASSERT_LT(point2 - point, span + timer_min_precision * 2);
 }
 
 TEST(TimerTest, TimerLongTick)
@@ -46,7 +46,7 @@ TEST(TimerTest, TimerLongTick)
     }));
     loop.run();
     GTEST_ASSERT_GE(point2 - point, span);
-    GTEST_ASSERT_LT(point2 - point, span + 500000);
+    GTEST_ASSERT_LT(point2 - point, span + 500000 * 2);
 }
 
 void work(event_loop_t &loop)
@@ -108,7 +108,7 @@ TEST(TimerTest, SocketTimer)
         })
         .at_server_disconnect([&loop](tcp::client_t &c, socket_t *socket) { loop.exit(0); });
 
-    client.connect(ctx, test_addr);
+    client.connect(ctx, test_addr, 1000);
 
     loop.run();
     server.close_server();

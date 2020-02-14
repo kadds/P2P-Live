@@ -42,7 +42,7 @@ timer_t make_timer(microsecond_t span, callback_t callback);
 
 struct timer_cmp
 {
-    bool operator()(timer_slot_t *lh, timer_slot_t *rh) const { return lh->timepoint < rh->timepoint; }
+    bool operator()(timer_slot_t *lh, timer_slot_t *rh) const { return lh->timepoint > rh->timepoint; }
 };
 
 struct time_manager_t
@@ -63,5 +63,10 @@ std::unique_ptr<time_manager_t> create_time_manager(microsecond_t precision = ti
 
 microsecond_t get_current_time();
 microsecond_t get_timestamp();
+
+constexpr microsecond_t make_timespan(int second, int ms = 0, int us = 0)
+{
+    return (u64)second * 1000000 + (u64)ms * 1000 + us;
+}
 
 } // namespace net
