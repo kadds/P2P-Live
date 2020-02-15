@@ -1,5 +1,8 @@
 #pragma once
+#include "co.hpp"
+#include "endian.hpp"
 #include "socket_addr.hpp"
+#include "socket_buffer.hpp"
 #include "timer.hpp"
 #include <functional>
 
@@ -11,8 +14,88 @@ class socket_t;
 
 namespace net::tcp
 {
+
+#pragma pack(push, 1)
+
+struct package_head_v1_t
+{
+    u8 version;
+    u16 size; /// a package size(byte) exclude head
+    using member_list_t = serialization::typelist_t<u8, u16>;
+};
+
+struct package_head_v2_t
+{
+    u8 version;
+    u32 size;
+    using member_list_t = serialization::typelist_t<u8, u32>;
+};
+
+struct package_head_v3_t
+{
+    u8 version;
+    u16 size;
+    u8 msg_type;
+    using member_list_t = serialization::typelist_t<u8, u16, u8>;
+};
+
+struct package_head_v4_t
+{
+    u8 version;
+    u32 size;
+    u16 msg_type;
+    using member_list_t = serialization::typelist_t<u8, u32, u16>;
+};
+
+#pragma pack(pop)
+
+struct package_head_t
+{
+    union
+    {
+        u8 version;
+        package_head_v1_t v1;
+        package_head_v2_t v2;
+        package_head_v3_t v3;
+        package_head_v4_t v4;
+    };
+};
+
+class connection_t
+{
+    socket_t *socket;
+
+  public:
+    connection_t(socket_t *so)
+        : socket(so){};
+    /// async write data by stream mode
+    co::async_result_t<io_result> awrite(co::paramter_t &param, socket_buffer_t &buffer);
+    /// async read data by stream mode
+    co::async_result_t<io_result> aread(co::paramter_t &param, socket_buffer_t &buffer);
+
+    /// wait next package and read tcp application head
+    co::async_result_t<io_result> aread_package_head(co::paramter_t &param, package_head_t &head);
+
+    co::async_result_t<io_result> aread_package_content(co::paramter_t &param, socket_buffer_t &buffer);
+
+    /// write package
+    co::async_result_t<io_result> awrite_package(co::paramter_t &param, package_head_t &head, socket_buffer_t &buffer);
+
+    socket_t *get_socket() { return socket; }
+};
+
+/// wrappers
+co::async_result_t<io_result> connection_awrite(co::paramter_t &param, connection_t conn, socket_buffer_t &buffer);
+co::async_result_t<io_result> connection_aread(co::paramter_t &param, connection_t conn, socket_buffer_t &buffer);
+co::async_result_t<io_result> connection_aread_package_head(co::paramter_t &param, connection_t conn,
+                                                            package_head_t &head);
+co::async_result_t<io_result> connection_aread_package_content(co::paramter_t &param, connection_t conn,
+                                                               socket_buffer_t &buffer);
+co::async_result_t<io_result> connection_awrite_package(co::paramter_t &param, connection_t conn, package_head_t &head,
+                                                        socket_buffer_t &buffer);
+
 class server_t;
-using server_handler_t = std::function<void(server_t &, socket_t *)>;
+using server_handler_t = std::function<void(server_t &, connection_t)>;
 using server_error_handler_t = std::function<void(server_t &, socket_t *, connection_state)>;
 
 class server_t
@@ -38,9 +121,10 @@ class server_t
     void exit_client(socket_t *client);
     void close_server();
 };
+
 class client_t;
 
-using client_handler_t = std::function<void(client_t &, socket_t *)>;
+using client_handler_t = std::function<void(client_t &, connection_t)>;
 
 using client_error_handler_t = std::function<void(client_t &, socket_t *, connection_state)>;
 

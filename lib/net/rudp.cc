@@ -116,8 +116,6 @@ class rudp_impl_t
             recv_buffer.expect().origin_length();
         }
         param2.stop_wait();
-        // stop recv aread event.
-        socket_aread_from(param, socket, recv_buffer, target);
 
         // normal receive data from KCP
         auto len = ikcp_recv(pcb, (char *)buffer.get_raw_ptr(), buffer.get_data_length());
@@ -135,6 +133,8 @@ class rudp_impl_t
 
         return io_result::ok;
     }
+
+    socket_t *get_socket() { return socket; }
 
     ~rudp_impl_t()
     {
@@ -184,6 +184,8 @@ void rudp_t::connect(socket_addr_t addr) { kcp_impl->connect_to_remote(addr); }
 
 void rudp_t::run(std::function<void()> func) { kcp_impl->run(func); }
 
+socket_t *rudp_t::get_socket() { return kcp_impl->get_socket(); }
+
 /// wrappers -----------------------
 
 co::async_result_t<io_result> rudp_t::awrite(co::paramter_t &param, socket_buffer_t &buffer)
@@ -203,7 +205,7 @@ co::async_result_t<io_result> rudp_awrite(co::paramter_t &param, rudp_t *rudp, s
 
 co::async_result_t<io_result> rudp_aread(co::paramter_t &param, rudp_t *rudp, socket_buffer_t &buffer)
 {
-    return rudp->awrite(param, buffer);
+    return rudp->aread(param, buffer);
 }
 
 } // namespace net

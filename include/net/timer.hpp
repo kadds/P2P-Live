@@ -69,4 +69,6 @@ constexpr microsecond_t make_timespan(int second, int ms = 0, int us = 0)
     return (u64)second * 1000000 + (u64)ms * 1000 + us;
 }
 
+constexpr microsecond_t make_timespan_full() { return 0xFFFFFFFFFFFFFFFFULL; }
+
 } // namespace net

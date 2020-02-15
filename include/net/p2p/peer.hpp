@@ -1,8 +1,9 @@
 #pragma once
-#include "endian.hpp"
-#include "net.hpp"
-#include "socket_addr.hpp"
-#include "udp.hpp"
+#include "../endian.hpp"
+#include "../net.hpp"
+#include "../rudp.hpp"
+#include "../socket_addr.hpp"
+#include "../tcp.hpp"
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -14,7 +15,7 @@ namespace net
 class socket_t;
 }
 
-namespace net::peer
+namespace net::p2p
 {
 using session_id_t = u64;
 namespace peer_msg_type
@@ -82,7 +83,7 @@ struct peer_data_package_t
 
 struct peer_t
 {
-    udp::server_t udp;
+    rudp_t udp;
     bool ping_ok;
     bool in_request;
     int mark;
@@ -105,6 +106,8 @@ using peer_disconnect_t = std::function<void(peer_client_t &, peer_t *)>;
 using peer_connect_ok_t = std::function<void(peer_client_t &, peer_t *)>;
 
 /// just request peer server and recv data
+/// connect to tracker and get peer nodes, a short connection. connect to tracker when need get get nodes.
+/// add to peer_client
 class peer_client_t
 {
   private:
@@ -121,8 +124,8 @@ class peer_client_t
     peer_client_t(const peer_client_t &) = delete;
     peer_client_t &operator=(const peer_client_t &) = delete;
 
-    peer_t *add_peer(event_context_t &context, socket_addr_t peer_addr);
-    void connect_to_peer(peer_t *peer);
+    peer_t *add_peer(event_context_t &context);
+    void connect_to_peer(peer_t *peer, socket_addr_t server_addr);
 
     peer_client_t &at_peer_data_recv(peer_server_data_recv_t handler);
     peer_client_t &at_peer_disconnect(peer_disconnect_t handler);
@@ -135,6 +138,7 @@ class peer_server_t;
 
 struct speer_t
 {
+    rudp_t udp;
     bool ping_ok;
     u64 last_online_timestamp;
     socket_addr_t address;
@@ -154,24 +158,27 @@ struct hash_func_t
     u64 operator()(const socket_addr_t &addr) const { return addr.hash(); }
 };
 /// a peer server can send data to other peer client
+/// connect to tracker and register this as a peer node, this is a long connection.
+
 class peer_server_t
 {
   private:
-    udp::server_t server;
     client_join_handler_t client_handler;
     client_data_request_handler_t data_handler;
     std::unordered_map<socket_addr_t, std::unique_ptr<speer_t>, hash_func_t> peers_map;
-    void server_main();
+    void peer_main(speer_t *);
 
   public:
     peer_server_t() = default;
     peer_server_t(const peer_server_t &) = delete;
     peer_server_t &operator=(const peer_server_t &) = delete;
-    void bind_server(event_context_t &context, socket_addr_t addr, bool reuse_addr = false);
+
+    speer_t *add_peer(event_context_t &context, socket_addr_t peer_addr);
+
     peer_server_t &at_client_join(client_join_handler_t handler);
     peer_server_t &at_client_pull(client_data_request_handler_t handler);
 
     void send_package_to_peer(speer_t *peer, u64 data_id, socket_buffer_t buffer);
 };
 
-} // namespace net::peer
+} // namespace net::p2p

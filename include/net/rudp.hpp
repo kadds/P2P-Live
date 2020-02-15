@@ -37,6 +37,8 @@ class rudp_t
 
     co::async_result_t<io_result> awrite(co::paramter_t &param, socket_buffer_t &buffer);
     co::async_result_t<io_result> aread(co::paramter_t &param, socket_buffer_t &buffer);
+
+    socket_t *get_socket();
 };
 
 // wrapper functions

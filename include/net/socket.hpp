@@ -93,5 +93,8 @@ socket_t *bind_at(socket_t *socket, socket_addr_t socket_to_addr);
 socket_t *listen_from(socket_t *socket, int max_count);
 co::async_result_t<socket_t *> accept_from(co::paramter_t &param, socket_t *in);
 void close_socket(socket_t *socket);
-
+socket_t *set_socket_send_buffer_size(socket_t *socket, int size);
+socket_t *set_socket_recv_buffer_size(socket_t *socket, int size);
+int get_socket_send_buffer_size(socket_t *socket);
+int get_socket_recv_buffer_size(socket_t *socket);
 } // namespace net

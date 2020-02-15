@@ -1,10 +1,10 @@
-#include "net/peer.hpp"
+#include "net/p2p/peer.hpp"
 #include "net/co.hpp"
 #include "net/endian.hpp"
 #include "net/load_balance.hpp"
 #include "net/socket.hpp"
 #include "net/socket_buffer.hpp"
-namespace net::peer
+namespace net::p2p
 {
 /// client -------------------------------------------------------------------------------------
 peer_client_t::peer_client_t(session_id_t sid)
@@ -14,10 +14,9 @@ peer_client_t::peer_client_t(session_id_t sid)
 
 peer_client_t::~peer_client_t() {}
 
-peer_t *peer_client_t::add_peer(event_context_t &context, socket_addr_t peer_addr)
+peer_t *peer_client_t::add_peer(event_context_t &context)
 {
     auto peer = std::make_unique<peer_t>();
-    peer->remote_address = peer_addr;
     socket_addr_t addr(0);
     peer->udp.bind(context, addr);
     auto ptr = peer.get();
@@ -27,9 +26,7 @@ peer_t *peer_client_t::add_peer(event_context_t &context, socket_addr_t peer_add
 
 void peer_client_t::client_main(peer_t *peer)
 {
-    auto socket = peer->udp.get_socket();
     auto addr = peer->udp.get_socket()->local_addr();
-
     {
         // request connect
         // swap init data
@@ -39,7 +36,7 @@ void peer_client_t::client_main(peer_t *peer)
         socket_buffer_t buffer(sizeof(req));
         buffer.expect().origin_length();
         assert(endian::save_to(req, buffer));
-        if (co::await(socket_awrite_to, socket, buffer, peer->remote_address) != io_result::ok)
+        if (co::await(rudp_awrite, &peer->udp, buffer) != io_result::ok)
         {
             for (auto it = peers.begin(); it != peers.end(); it++)
             {
@@ -61,9 +58,8 @@ void peer_client_t::client_main(peer_t *peer)
     peer_data_package_t *package = (peer_data_package_t *)data.get();
     while (1)
     {
-        socket_addr_t addr;
         recv_buffer.expect().origin_length();
-        co::await(socket_aread_from, socket, recv_buffer, addr);
+        co::await(rudp_aread, &peer->udp, recv_buffer);
         u8 type = recv_buffer.get_step_ptr()[0];
         if (type == peer_msg_type::init_respond)
         {
@@ -89,7 +85,12 @@ void peer_client_t::client_main(peer_t *peer)
     }
 }
 
-void peer_client_t::connect_to_peer(peer_t *peer) { peer->udp.run(std::bind(&peer_client_t::client_main, this, peer)); }
+void peer_client_t::connect_to_peer(peer_t *peer, socket_addr_t server_addr)
+{
+    peer->remote_address = server_addr;
+    peer->udp.connect(server_addr);
+    peer->udp.run(std::bind(&peer_client_t::client_main, this, peer));
+}
 
 peer_client_t &peer_client_t::at_peer_disconnect(peer_disconnect_t handler)
 {
@@ -125,72 +126,57 @@ void peer_client_t::pull_data_from_peer(u64 data_id)
     buffer.expect().origin_length();
     assert(endian::save_to(request, buffer));
     // pull data;
-    co::await(socket_awrite_to, peer->udp.get_socket(), buffer, peer->remote_address);
+    co::await(rudp_awrite, &peer->udp, buffer);
 }
 
 /// server-------------------------------------------------------------------------------------------
 
-void peer_server_t::server_main()
+void peer_server_t::peer_main(speer_t *peer)
 {
-    socket_addr_t addr;
     socket_buffer_t buffer(1472);
     while (1)
     {
         buffer.expect().origin_length();
-        co::await(socket_aread_from, server.get_socket(), buffer, addr);
+        co::await(rudp_aread, &peer->udp, buffer);
         u8 type = buffer.get_step_ptr()[0];
         if (type == peer_msg_type::init_request) // init request
         {
-            auto it = peers_map.find(addr);
-            if (it == peers_map.end())
-            {
-                auto peer = std::make_unique<speer_t>();
-                peer->last_online_timestamp = get_timestamp();
-                peer->ping_ok = true;
-                peer->address = addr;
-                auto ptr = peer.get();
-                peers_map.emplace(addr, std::move(peer));
-                peer_init_respond_t respond;
-                respond.type = 1;
-                respond.first_data_id = 0;
-                respond.last_data_id = 0;
-                buffer.expect().length(sizeof(respond));
-                assert(endian::save_to(respond, buffer));
-                co::await(socket_awrite_to, server.get_socket(), buffer, addr);
-                if (client_handler)
-                    client_handler(*this, ptr);
-            }
-            // else aready done
+            peer_init_respond_t respond;
+            respond.type = 1;
+            respond.first_data_id = 0;
+            respond.last_data_id = 0;
+            buffer.expect().length(sizeof(respond));
+            assert(endian::save_to(respond, buffer));
+            co::await(rudp_awrite, &peer->udp, buffer);
+            if (client_handler)
+                client_handler(*this, peer);
         }
         else if (type == peer_msg_type::data_request)
         {
             // request data
-            auto it = peers_map.find(addr);
-            if (it == peers_map.end())
-            {
-                continue;
-            }
             peer_data_request_t request;
             assert(endian::cast_to(buffer, request));
             if (data_handler)
-                data_handler(*this, request, it->second.get());
+                data_handler(*this, request, peer);
         }
         else if (type == peer_msg_type::heart)
         {
-            auto it = peers_map.find(addr);
-            if (it == peers_map.end())
-            {
-                continue;
-            }
-            it->second->last_online_timestamp = get_timestamp();
+            peer->last_online_timestamp = get_timestamp();
         }
     }
 }
 
-void peer_server_t::bind_server(event_context_t &context, socket_addr_t bind_taddr, bool reuse_addr)
+speer_t *peer_server_t::add_peer(event_context_t &context, socket_addr_t addr)
 {
-    server.bind(context, bind_taddr);
-    server.run(std::bind(&peer_server_t::server_main, this));
+    auto peer = std::make_unique<speer_t>();
+    peer->last_online_timestamp = get_timestamp();
+    peer->ping_ok = true;
+    peer->address = addr;
+    peer->udp.bind(context, socket_addr_t());
+    auto ptr = peer.get();
+    peers_map.emplace(addr, std::move(peer));
+    ptr->udp.run(std::bind(&peer_server_t::peer_main, this, ptr));
+    return ptr;
 }
 
 peer_server_t &peer_server_t::at_client_join(client_join_handler_t handler)
@@ -207,7 +193,6 @@ peer_server_t &peer_server_t::at_client_pull(client_data_request_handler_t handl
 
 void peer_server_t::send_package_to_peer(speer_t *peer, u64 data_id, socket_buffer_t buffer)
 {
-    auto socket = server.get_socket();
     /// split package
     peer_data_package_t package;
     package.type = peer_msg_type::data_package;
@@ -222,7 +207,7 @@ void peer_server_t::send_package_to_peer(speer_t *peer, u64 data_id, socket_buff
     memcpy(send_buffer.get_raw_ptr() + sizeof(package), buffer.get_raw_ptr(), buffer.get_data_length());
     byte v = send_buffer.get_raw_ptr()[sizeof(package)];
     /// TODO: split
-    co::await(socket_awrite_to, socket, send_buffer, peer->address);
+    co::await(rudp_awrite, &peer->udp, send_buffer);
 }
 
-} // namespace net::peer
+} // namespace net::p2p

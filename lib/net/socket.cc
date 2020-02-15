@@ -44,6 +44,11 @@ io_result socket_t::write_async(socket_buffer_t &buffer)
                 buffer.end_process();
                 return io_result::closed; // EOF PIPE
             }
+            else if (errno == EAGAIN)
+            {
+                buffer.set_process_length(buffer_offset);
+                return io_result::cont;
+            }
             else
             {
                 throw net_io_exception("send message failed!");
@@ -502,5 +507,33 @@ co::async_result_t<socket_t *> accept_from(co::paramter_t &param, socket_t *sock
 }
 
 void close_socket(socket_t *socket) { delete socket; }
+
+socket_t *set_socket_send_buffer_size(socket_t *socket, int size)
+{
+    setsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
+    return socket;
+}
+
+socket_t *set_socket_recv_buffer_size(socket_t *socket, int size)
+{
+    setsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+    return socket;
+}
+
+int get_socket_send_buffer_size(socket_t *socket)
+{
+    int size;
+    socklen_t len = sizeof(size);
+    getsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_SNDBUF, &size, &len);
+    return size;
+}
+
+int get_socket_recv_buffer_size(socket_t *socket)
+{
+    int size;
+    socklen_t len = sizeof(size);
+    getsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_RCVBUF, &size, &len);
+    return size;
+}
 
 } // namespace net

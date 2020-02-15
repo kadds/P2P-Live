@@ -1,10 +1,18 @@
 #include "net/timer.hpp"
 #include <chrono>
+#include <limits>
 #include <sys/time.h>
 
 namespace net
 {
-timer_t make_timer(microsecond_t span, callback_t callback) { return timer_t(span + get_current_time(), callback); }
+timer_t make_timer(microsecond_t span, callback_t callback)
+{
+    auto cur = get_current_time();
+    if (std::numeric_limits<u64>::max() - span < cur) // overflow
+        return timer_t(std::numeric_limits<u64>::max(), callback);
+
+    return timer_t(span + cur, callback);
+}
 
 std::unique_ptr<time_manager_t> create_time_manager(microsecond_t precision)
 {
@@ -39,7 +47,13 @@ void time_manager_t::tick()
 
 timer_id time_manager_t::insert(timer_t timer)
 {
-    timer.timepoint = (timer.timepoint + precision - 1) / precision * precision;
+    if (std::numeric_limits<u64>::max() - timer.timepoint < precision - 1) // overflow
+    {
+    }
+    else
+    {
+        timer.timepoint = (timer.timepoint + precision - 1) / precision * precision; // alignment
+    }
 
     auto it = map.find(timer.timepoint);
     if (it == map.end())
