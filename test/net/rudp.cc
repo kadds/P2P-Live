@@ -11,8 +11,8 @@ TEST(RUDPTest, Interface)
     event_loop_t loop;
     context.add_event_loop(&loop);
 
-    socket_addr_t addr1(2001);
-    socket_addr_t addr2(2000);
+    socket_addr_t addr1("127.0.0.1", 2001);
+    socket_addr_t addr2("127.0.0.1", 2000);
 
     rudp_t rudp1, rudp2;
     rudp1.bind(context, addr1, true);
@@ -48,7 +48,7 @@ TEST(RUDPTest, Interface)
             loop.exit(0);
         }
     });
-    loop.add_timer(make_timer(net::make_timespan(1), [&loop]() { loop.exit(-1); }));
+    // loop.add_timer(make_timer(net::make_timespan(1), [&loop]() { loop.exit(-1); }));
     loop.run();
     GTEST_ASSERT_EQ(count_flag, 2);
 }

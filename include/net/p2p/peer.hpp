@@ -141,13 +141,13 @@ struct speer_t
     rudp_t udp;
     bool ping_ok;
     u64 last_online_timestamp;
-    socket_addr_t address;
+    socket_addr_t remote_address;
     speer_t()
         : ping_ok(false)
     {
     }
-    bool operator==(const speer_t &rt) const { return rt.address == address; }
-    bool operator!=(const speer_t &rt) const { return rt.address != address; }
+    bool operator==(const speer_t &rt) const { return rt.remote_address == remote_address; }
+    bool operator!=(const speer_t &rt) const { return rt.remote_address != remote_address; }
 };
 
 using client_join_handler_t = std::function<void(peer_server_t &, speer_t *)>;

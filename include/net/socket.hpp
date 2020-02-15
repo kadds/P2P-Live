@@ -97,4 +97,6 @@ socket_t *set_socket_send_buffer_size(socket_t *socket, int size);
 socket_t *set_socket_recv_buffer_size(socket_t *socket, int size);
 int get_socket_send_buffer_size(socket_t *socket);
 int get_socket_recv_buffer_size(socket_t *socket);
+socket_addr_t get_ip(socket_t *socket);
+
 } // namespace net

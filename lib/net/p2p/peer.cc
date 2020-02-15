@@ -134,6 +134,7 @@ void peer_client_t::pull_data_from_peer(u64 data_id)
 void peer_server_t::peer_main(speer_t *peer)
 {
     socket_buffer_t buffer(1472);
+    peer->udp.connect(peer->remote_address);
     while (1)
     {
         buffer.expect().origin_length();
@@ -171,7 +172,7 @@ speer_t *peer_server_t::add_peer(event_context_t &context, socket_addr_t addr)
     auto peer = std::make_unique<speer_t>();
     peer->last_online_timestamp = get_timestamp();
     peer->ping_ok = true;
-    peer->address = addr;
+    peer->remote_address = addr;
     peer->udp.bind(context, socket_addr_t());
     auto ptr = peer.get();
     peers_map.emplace(addr, std::move(peer));

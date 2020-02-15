@@ -22,11 +22,17 @@ class rudp_impl_t
     microsecond_t next_time_point;
     /// set base time to aviod int overflow which used by kcp
     microsecond_t base_time;
-    bool is_await;
+    co::paramter_t co_param;
+
     void set_timer()
     {
-        auto next_tick_time = ikcp_check(pcb, (get_current_time() - base_time) / 1000);
-        if (timerid >= 0 && next_tick_time * 1000 + base_time == next_time_point)
+
+        auto cur = get_current_time();
+        auto next_tick_time = ikcp_check(pcb, (cur - base_time) / 1000);
+        auto time_point = next_tick_time * 1000 + base_time;
+        if (time_point < cur)
+            time_point = cur;
+        if (timerid >= 0 && time_point == next_time_point)
         {
             // no need change timer
             return;
@@ -36,12 +42,11 @@ class rudp_impl_t
         {
             socket->get_event_loop().remove_timer(next_time_point, timerid);
         }
+        next_time_point = time_point;
 
-        next_time_point = (u64)next_tick_time * 1000 + base_time;
-
-        timerid = socket->get_event_loop().add_timer(make_timer(next_time_point - get_current_time(), [this]() {
+        timerid = socket->get_event_loop().add_timer(make_timer(time_point - cur, [this]() {
             ikcp_update(pcb, (get_current_time() - base_time) / 1000);
-            if (is_await)
+            if (!co_param.is_stop())
             {
                 socket->get_coroutine()->resume();
             }
@@ -58,10 +63,12 @@ class rudp_impl_t
         ikcp_setoutput(pcb, udp_output);
         ikcp_wndsize(pcb, 128, 128);
         // fast mode
-        ikcp_nodelay(pcb, 1, 50, 1, 0);
+        ikcp_nodelay(pcb, 1, 10, 2, 1);
+        pcb->rx_minrto = 10;
+        pcb->fastresend = 1;
+
         base_time = get_current_time();
         timerid = -1;
-        is_await = false;
     }
 
     rudp_impl_t(const rudp_impl_t &) = delete;
@@ -92,8 +99,17 @@ class rudp_impl_t
     {
         if (param.is_stop()) /// stop timeout
         {
-            is_await = false;
+            socket_addr_t target;
+            co_param.stop_wait();
+            char bytex;
+            socket_buffer_t recv_buffer((byte *)&bytex, 1);
+            socket_aread_from(co_param, socket, recv_buffer, target);
+            buffer.end_process();
             return io_result::timeout;
+        }
+        if (co_param.is_stop())
+        {
+            co_param = {}; /// new
         }
 
         socket_buffer_t recv_buffer(1472);
@@ -102,8 +118,7 @@ class rudp_impl_t
         socket_addr_t target;
 
         // read data no wait from kernel udp buffer
-        co::paramter_t param2;
-        while (socket_aread_from(param2, socket, recv_buffer, target).is_finish())
+        while (socket_aread_from(co_param, socket, recv_buffer, target).is_finish())
         {
             if (target == remote_addr)
                 ikcp_input(pcb, (char *)recv_buffer.get_raw_ptr(), recv_buffer.get_data_length());
@@ -112,22 +127,24 @@ class rudp_impl_t
                 /// TODO: invalid user connect to it. report an error or run a callback
             }
             // reset param
-            param2 = co::paramter_t();
+            co_param = {};
             recv_buffer.expect().origin_length();
         }
-        param2.stop_wait();
 
         // normal receive data from KCP
         auto len = ikcp_recv(pcb, (char *)buffer.get_raw_ptr(), buffer.get_data_length());
         if (len < 0) // EAGAIN
         {
-            is_await = true;
             // add event
-            return co::async_result_t<io_result>();
+            return {};
         }
         buffer.set_process_length(len);
         buffer.end_process();
-        is_await = false;
+        co_param.stop_wait();
+
+        // stop recv aread event.
+        socket_aread_from(co_param, socket, recv_buffer, target);
+        co_param = {};
 
         set_timer();
 

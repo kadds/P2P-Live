@@ -1,5 +1,9 @@
 #include "net/socket.hpp"
+#include <arpa/inet.h>
 #include <fcntl.h>
+#include <net/if.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
 
 namespace net
 {
@@ -110,7 +114,8 @@ co::async_result_t<io_result> socket_t::awrite(co::paramter_t &param, socket_buf
 {
     if (param.is_stop())
     {
-        remove_event(event_type::writable);
+        if (param.get_times() > 0)
+            remove_event(event_type::writable);
         return io_result::timeout;
     }
 
@@ -121,14 +126,17 @@ co::async_result_t<io_result> socket_t::awrite(co::paramter_t &param, socket_buf
     auto ret = write_async(buffer);
     if (ret == io_result::cont)
     {
-        add_event(event_type::writable);
-        return co::async_result_t<io_result>();
+        if (param.get_times() == 0)
+            add_event(event_type::writable);
+        return {};
     }
     else if (ret == io_result::closed)
     {
         is_connection_closed = true;
     }
-    remove_event(event_type::writable);
+    if (param.get_times() > 0)
+        remove_event(event_type::writable);
+
     return ret;
 }
 
@@ -136,7 +144,8 @@ co::async_result_t<io_result> socket_t::aread(co::paramter_t &param, socket_buff
 {
     if (param.is_stop())
     {
-        remove_event(event_type::readable);
+        if (param.get_times() > 0)
+            remove_event(event_type::readable);
         return io_result::timeout;
     }
 
@@ -147,14 +156,16 @@ co::async_result_t<io_result> socket_t::aread(co::paramter_t &param, socket_buff
     auto ret = read_async(buffer);
     if (ret == io_result::cont)
     {
-        add_event(event_type::readable);
-        return co::async_result_t<io_result>();
+        if (param.get_times() == 0)
+            add_event(event_type::readable);
+        return {};
     }
     else if (ret == io_result::closed)
     {
         is_connection_closed = true;
     }
-    remove_event(event_type::readable);
+    if (param.get_times() > 0)
+        remove_event(event_type::readable);
     return ret;
 }
 
@@ -225,16 +236,19 @@ co::async_result_t<io_result> socket_t::awrite_to(co::paramter_t &param, socket_
 {
     if (param.is_stop())
     {
-        remove_event(event_type::writable);
+        if (param.get_times() > 0)
+            remove_event(event_type::writable);
         return io_result::timeout;
     }
     auto ret = write_pack(buffer, target);
     if (ret == io_result::cont)
     {
-        add_event(event_type::writable);
+        if (param.get_times() == 0)
+            add_event(event_type::writable);
         return co::async_result_t<io_result>();
     }
-    remove_event(event_type::writable);
+    if (param.get_times() > 0)
+        remove_event(event_type::writable);
     return ret;
 }
 
@@ -243,16 +257,19 @@ co::async_result_t<io_result> socket_t::aread_from(co::paramter_t &param, socket
 {
     if (param.is_stop())
     {
-        remove_event(event_type::readable);
+        if (param.get_times() > 0)
+            remove_event(event_type::readable);
         return io_result::timeout;
     }
     auto ret = read_pack(buffer, target);
     if (ret == io_result::cont)
     {
-        add_event(event_type::readable);
+        if (param.get_times() == 0)
+            add_event(event_type::readable);
         return co::async_result_t<io_result>();
     }
-    remove_event(event_type::readable);
+    if (param.get_times() > 0)
+        remove_event(event_type::readable);
     return ret;
 }
 
@@ -534,6 +551,17 @@ int get_socket_recv_buffer_size(socket_t *socket)
     socklen_t len = sizeof(size);
     getsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_RCVBUF, &size, &len);
     return size;
+}
+
+socket_addr_t get_ip(socket_t *socket)
+{
+    struct ifreq ifr;
+
+    if (ioctl(socket->get_raw_handle(), SIOCGIFADDR, &ifr) < 0)
+    {
+        return {};
+    }
+    return socket_addr_t((u32)(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr).s_addr, 0);
 }
 
 } // namespace net
