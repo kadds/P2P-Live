@@ -120,6 +120,7 @@ class server_t
 
     void exit_client(socket_t *client);
     void close_server();
+    socket_t *get_socket() const { return server_socket; }
 };
 
 class client_t;
@@ -149,6 +150,7 @@ class client_t
     void close();
 
     socket_addr_t get_connect_addr() const { return connect_addr; }
+    socket_t *get_socket() const { return socket; }
 };
 
 } // namespace net::tcp

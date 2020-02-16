@@ -1,5 +1,6 @@
 #include "net/p2p/peer.hpp"
 #include "net/event.hpp"
+#include "net/p2p/tracker.hpp"
 #include "net/socket.hpp"
 #include <gtest/gtest.h>
 
@@ -89,4 +90,40 @@ TEST(PeerTest, DataTransport)
     loop.add_timer(make_timer(net::make_timespan(1), [&loop]() { loop.exit(-1); }));
     loop.run();
     GTEST_ASSERT_EQ(data_recved, true);
+}
+
+TEST(PeerTest, TrackerPingPong)
+{
+    constexpr int test_count = 10;
+    event_context_t context(event_strategy::epoll);
+    event_loop_t loop;
+    context.add_event_loop(&loop);
+
+    bool ok = false;
+    std::unique_ptr<tracker_server_t[]> servers = std::make_unique<tracker_server_t[]>(test_count);
+    socket_addr_t addrs[test_count];
+
+    for (auto i = 0; i < test_count; i++)
+    {
+        addrs[i] = socket_addr_t("127.0.0.1", 2500 + i);
+        servers[i].bind(context, addrs[i], true);
+    }
+
+    for (auto i = 0; i < test_count; i++)
+    {
+        for (auto j = i + 1; j < test_count; j++)
+        {
+            servers[i].link_other_tracker_server(context, addrs[j], make_timespan_full());
+        }
+    }
+
+    loop.add_timer(make_timer(net::make_timespan(2), [&loop, &servers, &addrs]() {
+        for (auto i = 0; i < test_count; i++)
+        {
+            auto peer = servers[i].get_trackers();
+            GTEST_ASSERT_EQ(peer.size(), test_count - 1);
+        }
+        loop.exit(-1);
+    }));
+    loop.run();
 }

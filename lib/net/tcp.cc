@@ -203,7 +203,10 @@ co::async_result_t<io_result> connection_awrite_package(co::paramter_t &param, c
     return conn.awrite_package(param, head, buffer);
 }
 
-server_t::server_t() {}
+server_t::server_t()
+    : server_socket(nullptr)
+{
+}
 
 server_t::~server_t() { close_server(); }
 
@@ -260,7 +263,7 @@ void server_t::exit_client(socket_t *client)
         exit_handler(*this, client);
 
     context->remove_socket(client);
-    if (co::coroutine_t::in_coroutine(client->get_coroutine()))
+    if (co::coroutine_t::in_coroutine(client->get_coroutine()) && client->get_coroutine() != nullptr)
     {
         co::coroutine_t::yield([client]() { close_socket(client); });
     }
@@ -276,7 +279,7 @@ void server_t::close_server()
         return;
 
     context->remove_socket(server_socket);
-    if (co::coroutine_t::in_coroutine(server_socket->get_coroutine()))
+    if (co::coroutine_t::in_coroutine(server_socket->get_coroutine()) && server_socket->get_coroutine() != nullptr)
     {
         co::coroutine_t::yield([this]() {
             close_socket(server_socket);
@@ -308,7 +311,10 @@ server_t &server_t::at_client_connection_error(server_error_handler_t handler)
     return *this;
 }
 
-client_t::client_t() {}
+client_t::client_t()
+    : socket(nullptr)
+{
+}
 
 client_t::~client_t() { close(); }
 
@@ -383,7 +389,7 @@ void client_t::close()
         exit_handler(*this, socket);
 
     context->remove_socket(socket);
-    if (co::coroutine_t::in_coroutine(socket->get_coroutine()))
+    if (co::coroutine_t::in_coroutine(socket->get_coroutine()) && socket->get_coroutine() != nullptr)
     {
         co::coroutine_t::yield([this]() {
             close_socket(socket);
