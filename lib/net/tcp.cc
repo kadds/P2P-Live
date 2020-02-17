@@ -30,6 +30,8 @@ co::async_result_t<io_result> connection_t::aread_package_head(co::paramter_t &p
         {
             return {};
         }
+        if (res() != io_result::ok)
+            return res();
         if (head.version > 4 || head.version < 1) /// unknown header version
             return io_result::failed;
 
@@ -221,7 +223,6 @@ void server_t::client_main(socket_t *socket)
     {
         if (e.get_state() != connection_state::closed)
         {
-            std::cerr << e.what() << '\n';
             if (error_handler)
                 error_handler(*this, socket, e.get_state());
         }
@@ -313,6 +314,7 @@ server_t &server_t::at_client_connection_error(server_error_handler_t handler)
 
 client_t::client_t()
     : socket(nullptr)
+    , is_connect_server(false)
 {
 }
 
@@ -325,17 +327,15 @@ void client_t::wait_server(socket_addr_t address, microsecond_t timeout)
     {
         try
         {
+            is_connect_server = true;
             if (join_handler)
                 join_handler(*this, socket);
         } catch (net::net_connect_exception &e)
         {
             if (e.get_state() != connection_state::closed)
             {
-                std::cerr << e.what() << '\n';
                 if (error_handler)
-                {
                     error_handler(*this, socket, e.get_state());
-                }
             }
         }
     }
@@ -387,7 +387,7 @@ void client_t::close()
         return;
     if (exit_handler)
         exit_handler(*this, socket);
-
+    is_connect_server = false;
     context->remove_socket(socket);
     if (co::coroutine_t::in_coroutine(socket->get_coroutine()) && socket->get_coroutine() != nullptr)
     {

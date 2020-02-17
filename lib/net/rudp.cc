@@ -18,8 +18,7 @@ class rudp_impl_t
     socket_t *socket;
     socket_addr_t remote_addr;
     /// next timer
-    timer_id timerid;
-    microsecond_t next_time_point;
+    timer_registered_t timer_reg;
     /// set base time to aviod int overflow which used by kcp
     microsecond_t base_time;
     co::paramter_t co_param;
@@ -32,19 +31,18 @@ class rudp_impl_t
         auto time_point = next_tick_time * 1000 + base_time;
         if (time_point < cur)
             time_point = cur;
-        if (timerid >= 0 && time_point == next_time_point)
+        if (timer_reg.id >= 0 && timer_reg.timepoint <= time_point + 5000 && timer_reg.timepoint >= time_point - 5000)
         {
             // no need change timer
             return;
         }
 
-        if (timerid >= 0)
+        if (timer_reg.id >= 0)
         {
-            socket->get_event_loop().remove_timer(next_time_point, timerid);
+            socket->get_event_loop().remove_timer(timer_reg);
         }
-        next_time_point = time_point;
 
-        timerid = socket->get_event_loop().add_timer(make_timer(time_point - cur, [this]() {
+        timer_reg = socket->get_event_loop().add_timer(make_timer(time_point - cur, [this]() {
             ikcp_update(pcb, (get_current_time() - base_time) / 1000);
             if (!co_param.is_stop())
             {
@@ -68,7 +66,7 @@ class rudp_impl_t
         pcb->fastresend = 1;
 
         base_time = get_current_time();
-        timerid = -1;
+        timer_reg.id = -1;
     }
 
     rudp_impl_t(const rudp_impl_t &) = delete;

@@ -51,9 +51,8 @@ void peer_client_t::client_main(peer_t *peer)
         }
     }
 
-    socket_buffer_t recv_buffer(1472);
-    /// HACK: how can i use unique ptr safety.
-    std::unique_ptr<char[]> data(new char[sizeof(peer_data_package_t) + 1472]);
+    std::unique_ptr<char[]> data = std::make_unique<char[]>(1472);
+    socket_buffer_t recv_buffer((byte *)data.get(), 1472);
 
     peer_data_package_t *package = (peer_data_package_t *)data.get();
     while (1)

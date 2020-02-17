@@ -78,6 +78,27 @@ TEST(TimerTest, TimerFullWorkLoad)
     GTEST_ASSERT_GE(point2 - point, span);
 }
 
+TEST(TimerTest, TimerRemove)
+{
+    event_context_t ctx(event_strategy::epoll);
+    // 100ms
+    auto time_wheel = create_time_manager(make_timespan(0, 100));
+    event_loop_t loop(std::move(time_wheel));
+    ctx.add_event_loop(&loop);
+    microsecond_t point = get_current_time();
+    microsecond_t point2;
+
+    auto tick = loop.add_timer(make_timer(make_timespan(1, 500), [&loop, &point2]() {
+        std::string str = "timer remove failed";
+        GTEST_ASSERT_EQ(str, "");
+    }));
+
+    loop.add_timer(make_timer(make_timespan(1), [&loop, &tick]() { loop.remove_timer(tick); }));
+    loop.add_timer(make_timer(make_timespan(1, 800), [&loop, &tick]() { loop.exit(0); }));
+
+    loop.run();
+}
+
 TEST(TimerTest, SocketTimer)
 {
     socket_addr_t test_addr("127.0.0.1", 2222);

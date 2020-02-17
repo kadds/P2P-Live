@@ -1,6 +1,7 @@
 #pragma once
 #include "net.hpp"
 #include "socket_buffer.hpp"
+#include <cassert>
 #include <cstring>
 #include <tuple>
 #include <type_traits>
@@ -136,6 +137,15 @@ template <typename T> inline bool save_to(T &val, socket_buffer_t &buffer)
         return false;
     cast<T>(val);
     memcpy(ptr, &val, sizeof(val));
+    return true;
+}
+
+template <typename T> inline bool cast_inplace(T &val, socket_buffer_t &buffer)
+{
+    assert((byte *)&val == buffer.get_step_ptr());
+    if (buffer.get_step_rest_length() < sizeof(val))
+        return false;
+    cast<T>(val);
     return true;
 }
 

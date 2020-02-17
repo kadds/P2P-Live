@@ -94,7 +94,7 @@ TEST(PeerTest, DataTransport)
 
 TEST(PeerTest, TrackerPingPong)
 {
-    constexpr int test_count = 10;
+    constexpr int test_count = 25;
     event_context_t context(event_strategy::epoll);
     event_loop_t loop;
     context.add_event_loop(&loop);
@@ -122,8 +122,57 @@ TEST(PeerTest, TrackerPingPong)
         {
             auto peer = servers[i].get_trackers();
             GTEST_ASSERT_EQ(peer.size(), test_count - 1);
+            for (auto j = 0; j < peer.size(); j++)
+            {
+                GTEST_ASSERT_GE(peer[j].port, 2500);
+                GTEST_ASSERT_LT(peer[j].port, 2500 + test_count);
+            }
         }
         loop.exit(-1);
     }));
+    loop.run();
+}
+
+TEST(PeerTest, TrackerNode)
+{
+    constexpr int test_count = 25;
+    event_context_t context(event_strategy::epoll);
+    event_loop_t loop;
+    context.add_event_loop(&loop);
+
+    tracker_server_t tserver1;
+    socket_addr_t taddrs1("127.0.0.1", 2555);
+    tserver1.bind(context, taddrs1, true);
+    tracker_server_t tserver2;
+    socket_addr_t taddrs2("127.0.0.1", 2556);
+    tserver2.bind(context, taddrs2, true);
+
+    // link tserver1 and tserver2
+    tserver1.link_other_tracker_server(context, taddrs2, make_timespan(1));
+
+    std::unique_ptr<tracker_node_client_t[]> tclients = std::make_unique<tracker_node_client_t[]>(test_count);
+    for (int i = 0; i < test_count; i++)
+    {
+        tclients[i].config(1, 30, p2p::request_strategy::random);
+        tclients[i].connect_server(context, taddrs1, make_timespan_full());
+        tclients[i].at_nodes_update([](tracker_node_client_t &client, peer_node_t *nodes, u64 count) {
+            GTEST_ASSERT_EQ(count, test_count - 1);
+        });
+        tclients[i].at_trackers_update([taddrs2](tracker_node_client_t &, tracker_node_t *nodes, u64 count) {
+            /// always get tserver2 address
+            GTEST_ASSERT_EQ(count, 1);
+            GTEST_ASSERT_EQ(nodes[0].port, taddrs2.get_port());
+        });
+    }
+
+    loop.add_timer(make_timer(make_timespan(1), [&tclients]() {
+        for (int i = 0; i < test_count; i++)
+        {
+            tclients[i].request_update_nodes();
+            tclients[i].request_update_trackers();
+        }
+    }));
+
+    loop.add_timer(make_timer(net::make_timespan(2), [&loop]() { loop.exit(0); }));
     loop.run();
 }

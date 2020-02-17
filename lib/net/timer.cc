@@ -45,7 +45,7 @@ void time_manager_t::tick()
     }
 }
 
-timer_id time_manager_t::insert(timer_t timer)
+timer_registered_t time_manager_t::insert(timer_t timer)
 {
     if (std::numeric_limits<u64>::max() - timer.timepoint < precision - 1) // overflow
     {
@@ -63,15 +63,15 @@ timer_id time_manager_t::insert(timer_t timer)
     }
 
     it->second->callbacks.emplace_back(timer.callback, true);
-    return it->second->callbacks.size();
+    return {it->second->callbacks.size(), timer.timepoint};
 }
 
-void time_manager_t::cancel(microsecond_t timepoint, timer_id id)
+void time_manager_t::cancel(timer_registered_t reg)
 {
-    auto it = map.find(timepoint);
+    auto it = map.find(reg.timepoint);
     if (it != map.end())
     {
-        it->second->callbacks[id - 1].second = false;
+        it->second->callbacks[reg.id - 1].second = false;
     }
 }
 

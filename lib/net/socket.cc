@@ -53,6 +53,14 @@ io_result socket_t::write_async(socket_buffer_t &buffer)
                 buffer.set_process_length(buffer_offset);
                 return io_result::cont;
             }
+            else if (errno == ECONNREFUSED)
+            {
+                throw net_connect_exception("recv message failed!", connection_state::connection_refuse);
+            }
+            else if (errno == ECONNRESET)
+            {
+                throw net_connect_exception("recv message failed!", connection_state::close_by_peer);
+            }
             else
             {
                 throw net_io_exception("send message failed!");
@@ -96,6 +104,10 @@ io_result socket_t::read_async(socket_buffer_t &buffer)
             else if (errno == ECONNREFUSED)
             {
                 throw net_connect_exception("recv message failed!", connection_state::connection_refuse);
+            }
+            else if (errno == ECONNRESET)
+            {
+                throw net_connect_exception("recv message failed!", connection_state::close_by_peer);
             }
             else
             {
@@ -220,7 +232,7 @@ io_result socket_t::read_pack(socket_buffer_t &buffer, socket_addr_t &target)
         {
             return io_result::cont;
         }
-        else if (errno == ECONNREFUSED)
+        else if (errno == EPIPE)
         {
             return io_result::closed;
         }
@@ -275,10 +287,8 @@ co::async_result_t<io_result> socket_t::aread_from(co::paramter_t &param, socket
 
 void socket_t::sleep(microsecond_t span)
 {
-    if (loop->add_timer(make_timer(span, [this]() { co->resume(); })) >= 0)
-    {
-        co::coroutine_t::yield();
-    }
+    loop->add_timer(make_timer(span, [this]() { co->resume(); }));
+    co::coroutine_t::yield();
 }
 
 socket_addr_t socket_t::local_addr()
@@ -503,6 +513,7 @@ co::async_result_t<socket_t *> accept_from(co::paramter_t &param, socket_t *sock
     int fd = accept(socket->get_raw_handle(), 0, 0);
     if (fd < 0)
     {
+        int r = errno;
         if (errno == EAGAIN)
         {
             // wait

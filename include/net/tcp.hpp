@@ -137,6 +137,7 @@ class client_t
     client_handler_t exit_handler;
     client_error_handler_t error_handler;
     event_context_t *context;
+    bool is_connect_server;
     void wait_server(socket_addr_t address, microsecond_t timeout);
 
   public:
@@ -151,6 +152,8 @@ class client_t
 
     socket_addr_t get_connect_addr() const { return connect_addr; }
     socket_t *get_socket() const { return socket; }
+    tcp::connection_t get_connection() const { return socket; }
+    bool is_connect() const { return is_connect_server; }
 };
 
 } // namespace net::tcp

@@ -6,6 +6,7 @@ namespace net
 enum class connection_state
 {
     closed,
+    close_by_peer,
     connection_refuse,
     address_in_used,
     no_resource,

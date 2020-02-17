@@ -190,8 +190,7 @@ inline static auto await_timeout(microsecond_t span, Func func, Args &&... args)
 {
     paramter_t param;
     auto co = coroutine_t::current();
-    net::timer_id timerid;
-    microsecond_t timepoint;
+    timer_registered_t reg_timer;
     while (1)
     {
         auto ret = func(param, std::forward<Args>(args)...);
@@ -199,7 +198,7 @@ inline static auto await_timeout(microsecond_t span, Func func, Args &&... args)
         {
             if (param.get_times() != 0)
             {
-                event_loop_t::current().remove_timer(timepoint, timerid);
+                event_loop_t::current().remove_timer(reg_timer);
             }
             return ret();
         }
@@ -210,8 +209,7 @@ inline static auto await_timeout(microsecond_t span, Func func, Args &&... args)
                 /// XXX: coroutine may destroy by main thread
                 co->resume();
             });
-            timepoint = timer.timepoint;
-            timerid = event_loop_t::current().add_timer(timer);
+            reg_timer = event_loop_t::current().add_timer(timer);
         }
         param.add_times();
         coroutine_t::yield();

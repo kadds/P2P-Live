@@ -67,7 +67,7 @@ namespace net::p2p
 enum class request_strategy : u8
 {
     random,
-    min_load_work,
+    min_workload,
 };
 
 namespace tracker_packet
@@ -116,37 +116,37 @@ struct tracker_node_t
 /// type 3
 struct get_nodes_request_t
 {
-    u32 max_count;
+    u16 max_count;
     u64 sid;
     request_strategy strategy;
-    using member_list_t = serialization::typelist_t<u32, u64, u8>;
+    using member_list_t = serialization::typelist_t<u16, u64, u8>;
 };
 
 /// type 4
 struct get_nodes_respond_t
 {
-    u32 return_count;
+    u16 return_count;
     u32 available_count;
     u64 sid;
     peer_node_t peers[0];
-    using member_list_t = serialization::typelist_t<u32, u32, u64>;
+    using member_list_t = serialization::typelist_t<u16, u32, u64>;
 };
 
 /// type 5
 struct get_trackers_request_t
 {
-    u32 max_count;
+    u16 max_count;
     request_strategy strategy;
-    using member_list_t = serialization::typelist_t<u32, u8>;
+    using member_list_t = serialization::typelist_t<u16, u8>;
 };
 
 /// type 6
 struct get_trackers_respond_t
 {
-    u32 return_count;
+    u16 return_count;
     u32 available_count;
     tracker_node_t trackers[0];
-    using member_list_t = serialization::typelist_t<u32, u32>;
+    using member_list_t = serialization::typelist_t<u16, u32>;
 };
 
 /// type 0xFF
@@ -167,48 +167,70 @@ struct connection_request_t
 
 #pragma pack(pop)
 
-class tracker_server_t;
-
-using tracker_client_join_handler_t = std::function<void(tracker_server_t &, tcp::connection_t)>;
-
-struct hash_func
-{
-    u64 operator()(const socket_addr_t &addr) const { return addr.hash(); }
-};
-
 struct tracker_info_t
 {
-    /// remote
-    socket_addr_t address;
     microsecond_t last_ping;
     u32 workload;
     u32 trackers;
+    /// remote
+    tracker_node_t node;
+
     tcp::client_t client;
     tcp::connection_t conn_server;
     bool is_client;
+    bool closed;
     tracker_info_t()
         : last_ping(0)
         , workload(0)
         , trackers(0)
         , conn_server(nullptr)
         , is_client(false)
+        , closed(false)
     {
     }
 };
 
+struct node_info_t
+{
+    microsecond_t last_ping;
+    u32 workload;
+    peer_node_t node;
+
+    node_info_t()
+        : last_ping(0)
+        , workload(0){};
+};
+
+struct addr_hash_func
+{
+    u64 operator()(const socket_addr_t &addr) const { return addr.hash(); }
+};
+
+// 30s
+constexpr static inline u64 node_tick_timespan = 30000000;
+constexpr static inline u64 node_tick_times = 2;
+
 class tracker_server_t
 {
-    /// TODO: tracker server link timeout
-    constexpr static inline u64 tick_timespan = 5000000;
-    constexpr static inline u64 tick_times = 2;
+  private:
+    using error_handler_t = std::function<void(tracker_server_t &, socket_t *socket, connection_state)>;
+
+  private:
+    /// 1min
+    constexpr static inline u64 tick_timespan = 60000000;
+    constexpr static inline u64 tick_times = 3;
 
     tcp::server_t server;
 
     void server_main(tcp::connection_t conn);
     void client_main(tcp::connection_t conn);
 
-    std::unordered_map<socket_addr_t, std::unique_ptr<tracker_info_t>, hash_func> trackers;
-    std::unordered_set<socket_addr_t, hash_func> nodes;
+    /// save index of tracker_infos
+    std::unordered_map<socket_addr_t, std::unique_ptr<tracker_info_t>, addr_hash_func> trackers;
+    std::unordered_map<socket_addr_t, size_t, addr_hash_func> nodes;
+
+    std::vector<node_info_t> node_infos;
+    error_handler_t error_handler;
 
     void update_tracker(socket_addr_t addr, tcp::connection_t conn, tracker_ping_pong_t &res);
 
@@ -216,33 +238,56 @@ class tracker_server_t
     tracker_server_t(){};
     void bind(event_context_t &context, socket_addr_t addr, bool reuse_addr = false);
     void link_other_tracker_server(event_context_t &context, socket_addr_t addr, microsecond_t timeout);
-    std::vector<socket_addr_t> get_trackers() const;
+    tracker_server_t &at_link_error(error_handler_t handler);
+    std::vector<tracker_node_t> get_trackers() const;
 };
 
 class tracker_node_client_t;
 
-using at_nodes_update_handler_t = std::function<void(tracker_node_client_t &, peer_node_t *nodes, u64 count)>;
-using at_trackers_update_handler_t = std::function<void(tracker_node_client_t &, peer_node_t *nodes, u64 count)>;
-using at_nodes_connect_handler_t = std::function<void(tracker_node_client_t &, peer_node_t *nodes, u64 count)>;
-
+/// client under NAT or not
 class tracker_node_client_t
 {
+  private:
+    using at_nodes_update_handler_t = std::function<void(tracker_node_client_t &, peer_node_t *, u64)>;
+    using at_trackers_update_handler_t = std::function<void(tracker_node_client_t &, tracker_node_t *, u64)>;
+    using at_nodes_connect_handler_t = std::function<void(tracker_node_client_t &, peer_node_t *, u64)>;
+    using at_error_handler_t = std::function<void(tracker_node_client_t &, socket_t *, connection_state)>;
+
+  private:
     tcp::client_t client;
-    at_nodes_update_handler_t update_handler;
+    bool wait_next_package;
+
+    at_nodes_update_handler_t node_update_handler;
     at_trackers_update_handler_t tracker_update_handler;
     at_nodes_connect_handler_t connect_handler;
+    at_error_handler_t error_handler;
+
+    void update_trackers(int count, request_strategy strategy);
+    void update_nodes();
+    u64 sid;
+    int request_count;
+    request_strategy strategy;
+    bool request_trackers, request_nodes;
+
+    void main(tcp::connection_t conn);
 
   public:
+    void config(u64 sid, int max_request_count, request_strategy strategy);
+
     void connect_server(event_context_t &context, socket_addr_t addr, microsecond_t timeout);
 
-    void request_update_nodes(int count, u64 sid, request_strategy strategy);
+    void request_update_trackers();
     tracker_node_client_t &at_nodes_update(at_nodes_update_handler_t handler);
 
-    void request_update_trackers(int count, request_strategy strategy);
+    void request_update_nodes();
     tracker_node_client_t &at_trackers_update(at_trackers_update_handler_t handler);
 
-    void request_connect_node(std::vector<socket_addr_t> addr);
+    void connect_node(peer_node_t node);
     tracker_node_client_t &at_node_connectable(at_nodes_connect_handler_t handler);
+
+    tracker_node_client_t &at_error(at_error_handler_t handler);
+
+    socket_t *get_socket() const { return client.get_socket(); }
 };
 
 } // namespace net::p2p

@@ -45,6 +45,12 @@ struct timer_cmp
     bool operator()(timer_slot_t *lh, timer_slot_t *rh) const { return lh->timepoint > rh->timepoint; }
 };
 
+struct timer_registered_t
+{
+    timer_id id;
+    microsecond_t timepoint;
+};
+
 struct time_manager_t
 {
     microsecond_t precision;
@@ -54,8 +60,8 @@ struct time_manager_t
     time_manager_t() {}
 
     void tick();
-    timer_id insert(timer_t timer);
-    void cancel(microsecond_t timepoint, timer_id id);
+    timer_registered_t insert(timer_t timer);
+    void cancel(timer_registered_t reg);
     microsecond_t next_tick_timepoint();
 };
 

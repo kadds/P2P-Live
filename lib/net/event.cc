@@ -145,9 +145,9 @@ event_loop_t *event_context_t::remove_socket(socket_t *socket)
     return loop;
 }
 
-timer_id event_loop_t::add_timer(timer_t timer) { return time_manager->insert(timer); }
+timer_registered_t event_loop_t::add_timer(timer_t timer) { return time_manager->insert(timer); }
 
-void event_loop_t::remove_timer(microsecond_t timepoint, timer_id id) { time_manager->cancel(timepoint, id); }
+void event_loop_t::remove_timer(timer_registered_t reg) { time_manager->cancel(reg); }
 
 void event_context_t::add_event_loop(event_loop_t *loop)
 {
