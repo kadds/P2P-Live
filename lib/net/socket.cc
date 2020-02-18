@@ -1,5 +1,9 @@
 #include "net/socket.hpp"
+#include <arpa/inet.h>
 #include <fcntl.h>
+#include <net/if.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
 
 namespace net
 {
@@ -22,7 +26,7 @@ io_result socket_t::write_async(socket_buffer_t &buffer)
 {
     unsigned long buffer_offset = buffer.get_process_length();
     unsigned long buffer_size = buffer.get_data_length() - buffer.get_process_length();
-    byte *buf = buffer.get();
+    byte *buf = buffer.get_raw_ptr();
     while (buffer_size > 0)
     {
         auto len = send(fd, buf + buffer_offset, buffer_size, MSG_DONTWAIT);
@@ -44,6 +48,19 @@ io_result socket_t::write_async(socket_buffer_t &buffer)
                 buffer.end_process();
                 return io_result::closed; // EOF PIPE
             }
+            else if (errno == EAGAIN)
+            {
+                buffer.set_process_length(buffer_offset);
+                return io_result::cont;
+            }
+            else if (errno == ECONNREFUSED)
+            {
+                throw net_connect_exception("recv message failed!", connection_state::connection_refuse);
+            }
+            else if (errno == ECONNRESET)
+            {
+                throw net_connect_exception("recv message failed!", connection_state::close_by_peer);
+            }
             else
             {
                 throw net_io_exception("send message failed!");
@@ -62,7 +79,7 @@ io_result socket_t::read_async(socket_buffer_t &buffer)
 {
     unsigned long buffer_offset = buffer.get_process_length();
     unsigned long buffer_size = buffer.get_data_length() - buffer.get_process_length();
-    byte *buf = buffer.get();
+    byte *buf = buffer.get_raw_ptr();
     ssize_t len;
     while (buffer_size > 0)
     {
@@ -88,6 +105,10 @@ io_result socket_t::read_async(socket_buffer_t &buffer)
             {
                 throw net_connect_exception("recv message failed!", connection_state::connection_refuse);
             }
+            else if (errno == ECONNRESET)
+            {
+                throw net_connect_exception("recv message failed!", connection_state::close_by_peer);
+            }
             else
             {
                 throw net_io_exception("recv message failed!");
@@ -101,8 +122,15 @@ io_result socket_t::read_async(socket_buffer_t &buffer)
     return io_result::ok;
 }
 
-co::async_result_t<io_result> socket_t::awrite(socket_buffer_t &buffer)
+co::async_result_t<io_result> socket_t::awrite(co::paramter_t &param, socket_buffer_t &buffer)
 {
+    if (param.is_stop())
+    {
+        if (param.get_times() > 0)
+            remove_event(event_type::writable);
+        return io_result::timeout;
+    }
+
     if (is_connection_closed)
     {
         throw net_connect_exception("socket closed by peer", connection_state::closed);
@@ -110,19 +138,29 @@ co::async_result_t<io_result> socket_t::awrite(socket_buffer_t &buffer)
     auto ret = write_async(buffer);
     if (ret == io_result::cont)
     {
-        add_event(event_type::writable);
-        return co::async_result_t<io_result>();
+        if (param.get_times() == 0)
+            add_event(event_type::writable);
+        return {};
     }
     else if (ret == io_result::closed)
     {
         is_connection_closed = true;
     }
-    remove_event(event_type::writable);
+    if (param.get_times() > 0)
+        remove_event(event_type::writable);
+
     return ret;
 }
 
-co::async_result_t<io_result> socket_t::aread(socket_buffer_t &buffer)
+co::async_result_t<io_result> socket_t::aread(co::paramter_t &param, socket_buffer_t &buffer)
 {
+    if (param.is_stop())
+    {
+        if (param.get_times() > 0)
+            remove_event(event_type::readable);
+        return io_result::timeout;
+    }
+
     if (is_connection_closed)
     {
         throw net_connect_exception("socket closed by peer", connection_state::closed);
@@ -130,14 +168,16 @@ co::async_result_t<io_result> socket_t::aread(socket_buffer_t &buffer)
     auto ret = read_async(buffer);
     if (ret == io_result::cont)
     {
-        add_event(event_type::readable);
-        return co::async_result_t<io_result>();
+        if (param.get_times() == 0)
+            add_event(event_type::readable);
+        return {};
     }
     else if (ret == io_result::closed)
     {
         is_connection_closed = true;
     }
-    remove_event(event_type::readable);
+    if (param.get_times() > 0)
+        remove_event(event_type::readable);
     return ret;
 }
 
@@ -146,9 +186,8 @@ io_result socket_t::write_pack(socket_buffer_t &buffer, socket_addr_t target)
     auto addr = target.get_raw_addr();
     unsigned long buffer_offset = buffer.get_process_length();
     unsigned long buffer_size = buffer.get_data_length() - buffer.get_process_length();
-    byte *buf = buffer.get();
-    auto len =
-        sendto(fd, buffer.get(), buffer.get_data_length(), MSG_DONTWAIT, (sockaddr *)&addr, (socklen_t)sizeof(addr));
+    auto len = sendto(fd, buffer.get_raw_ptr(), buffer.get_data_length(), MSG_DONTWAIT, (sockaddr *)&addr,
+                      (socklen_t)sizeof(addr));
     if (len == 0)
     {
         return io_result::closed;
@@ -178,7 +217,7 @@ io_result socket_t::read_pack(socket_buffer_t &buffer, socket_addr_t &target)
 {
     auto addr = target.get_raw_addr();
     socklen_t slen = sizeof(addr);
-    auto len = recvfrom(fd, buffer.get(), buffer.get_data_length(), MSG_DONTWAIT, (sockaddr *)&addr, &slen);
+    auto len = recvfrom(fd, buffer.get_raw_ptr(), buffer.get_data_length(), MSG_DONTWAIT, (sockaddr *)&addr, &slen);
     if (len == 0)
     {
         return io_result::closed;
@@ -193,7 +232,7 @@ io_result socket_t::read_pack(socket_buffer_t &buffer, socket_addr_t &target)
         {
             return io_result::cont;
         }
-        else if (errno == ECONNREFUSED)
+        else if (errno == EPIPE)
         {
             return io_result::closed;
         }
@@ -205,34 +244,51 @@ io_result socket_t::read_pack(socket_buffer_t &buffer, socket_addr_t &target)
     return io_result::ok;
 }
 
-co::async_result_t<io_result> socket_t::awrite_to(socket_buffer_t &buffer, socket_addr_t target)
+co::async_result_t<io_result> socket_t::awrite_to(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t target)
 {
+    if (param.is_stop())
+    {
+        if (param.get_times() > 0)
+            remove_event(event_type::writable);
+        return io_result::timeout;
+    }
     auto ret = write_pack(buffer, target);
     if (ret == io_result::cont)
     {
-        add_event(event_type::writable);
+        if (param.get_times() == 0)
+            add_event(event_type::writable);
         return co::async_result_t<io_result>();
     }
+    if (param.get_times() > 0)
+        remove_event(event_type::writable);
     return ret;
 }
 
-co::async_result_t<io_result> socket_t::aread_from(socket_buffer_t &buffer, socket_addr_t &target)
+co::async_result_t<io_result> socket_t::aread_from(co::paramter_t &param, socket_buffer_t &buffer,
+                                                   socket_addr_t &target)
 {
+    if (param.is_stop())
+    {
+        if (param.get_times() > 0)
+            remove_event(event_type::readable);
+        return io_result::timeout;
+    }
     auto ret = read_pack(buffer, target);
     if (ret == io_result::cont)
     {
-        add_event(event_type::readable);
+        if (param.get_times() == 0)
+            add_event(event_type::readable);
         return co::async_result_t<io_result>();
     }
+    if (param.get_times() > 0)
+        remove_event(event_type::readable);
     return ret;
 }
 
 void socket_t::sleep(microsecond_t span)
 {
-    if (loop->add_timer(make_timer(span, [this]() { co->resume(); })) >= 0)
-    {
-        co::coroutine_t::yield();
-    }
+    loop->add_timer(make_timer(span, [this]() { co->resume(); }));
+    co::coroutine_t::yield();
 }
 
 socket_addr_t socket_t::local_addr()
@@ -289,24 +345,26 @@ void socket_t::startup_coroutine(co::coroutine_t *co)
     co->resume();
 }
 
-co::async_result_t<io_result> socket_awrite(socket_t *socket, socket_buffer_t &buffer)
+co::async_result_t<io_result> socket_awrite(co::paramter_t &param, socket_t *socket, socket_buffer_t &buffer)
 {
-    return socket->awrite(buffer);
+    return socket->awrite(param, buffer);
 }
 
-co::async_result_t<io_result> socket_aread(socket_t *socket, socket_buffer_t &buffer)
+co::async_result_t<io_result> socket_aread(co::paramter_t &param, socket_t *socket, socket_buffer_t &buffer)
 {
     // async read wrapper
-    return socket->aread(buffer);
+    return socket->aread(param, buffer);
 }
 
-co::async_result_t<io_result> socket_awrite_to(socket_t *socket, socket_buffer_t &buffer, socket_addr_t target)
+co::async_result_t<io_result> socket_awrite_to(co::paramter_t &param, socket_t *socket, socket_buffer_t &buffer,
+                                               socket_addr_t target)
 {
-    return socket->awrite_to(buffer, target);
+    return socket->awrite_to(param, buffer, target);
 }
-co::async_result_t<io_result> socket_aread_from(socket_t *socket, socket_buffer_t &buffer, socket_addr_t &target)
+co::async_result_t<io_result> socket_aread_from(co::paramter_t &param, socket_t *socket, socket_buffer_t &buffer,
+                                                socket_addr_t &target)
 {
-    return socket->aread_from(buffer, target);
+    return socket->aread_from(param, buffer, target);
 }
 
 socket_t *new_tcp_socket()
@@ -347,8 +405,14 @@ socket_t *reuse_port_socket(socket_t *socket, bool reuse)
     return socket;
 }
 
-co::async_result_t<io_result> connect_to(socket_t *socket, socket_addr_t socket_to_addr, int timeout_ms)
+co::async_result_t<io_result> connect_to(co::paramter_t &param, socket_t *socket, socket_addr_t socket_to_addr)
 {
+    if (param.is_stop())
+    {
+        socket->remove_event(event_type::readable | event_type::writable);
+        return io_result::timeout;
+    }
+
     socklen_t len = sizeof(sockaddr_in);
     auto addr = socket_to_addr.get_raw_addr();
 
@@ -380,8 +444,14 @@ co::async_result_t<io_result> connect_to(socket_t *socket, socket_addr_t socket_
     return co::async_result_t<io_result>(io_result::ok);
 }
 
-co::async_result_t<io_result> connect_udp(socket_t *socket, socket_addr_t socket_to_addr, int timeout_ms)
+co::async_result_t<io_result> connect_udp(co::paramter_t &param, socket_t *socket, socket_addr_t socket_to_addr)
 {
+    if (param.is_stop())
+    {
+        socket->remove_event(event_type::readable | event_type::writable);
+        return io_result::timeout;
+    }
+
     socklen_t len = sizeof(sockaddr_in);
     auto addr = socket_to_addr.get_raw_addr();
 
@@ -432,11 +502,18 @@ socket_t *listen_from(socket_t *socket, int max_count)
     return socket;
 }
 
-co::async_result_t<socket_t *> accept_from(socket_t *socket)
+co::async_result_t<socket_t *> accept_from(co::paramter_t &param, socket_t *socket)
 {
+    if (param.is_stop())
+    {
+        socket->remove_event(event_type::readable);
+        return nullptr;
+    }
+
     int fd = accept(socket->get_raw_handle(), 0, 0);
     if (fd < 0)
     {
+        int r = errno;
         if (errno == EAGAIN)
         {
             // wait
@@ -458,5 +535,44 @@ co::async_result_t<socket_t *> accept_from(socket_t *socket)
 }
 
 void close_socket(socket_t *socket) { delete socket; }
+
+socket_t *set_socket_send_buffer_size(socket_t *socket, int size)
+{
+    setsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
+    return socket;
+}
+
+socket_t *set_socket_recv_buffer_size(socket_t *socket, int size)
+{
+    setsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+    return socket;
+}
+
+int get_socket_send_buffer_size(socket_t *socket)
+{
+    int size;
+    socklen_t len = sizeof(size);
+    getsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_SNDBUF, &size, &len);
+    return size;
+}
+
+int get_socket_recv_buffer_size(socket_t *socket)
+{
+    int size;
+    socklen_t len = sizeof(size);
+    getsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_RCVBUF, &size, &len);
+    return size;
+}
+
+socket_addr_t get_ip(socket_t *socket)
+{
+    struct ifreq ifr;
+
+    if (ioctl(socket->get_raw_handle(), SIOCGIFADDR, &ifr) < 0)
+    {
+        return {};
+    }
+    return socket_addr_t((u32)(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr).s_addr, 0);
+}
 
 } // namespace net

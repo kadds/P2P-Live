@@ -25,7 +25,7 @@ TEST(TimerTest, TimerShortTick)
     }));
     loop.run();
     GTEST_ASSERT_GE(point2 - point, span);
-    GTEST_ASSERT_LT(point2 - point, span + timer_min_precision);
+    GTEST_ASSERT_LT(point2 - point, span + timer_min_precision * 2);
 }
 
 TEST(TimerTest, TimerLongTick)
@@ -46,7 +46,7 @@ TEST(TimerTest, TimerLongTick)
     }));
     loop.run();
     GTEST_ASSERT_GE(point2 - point, span);
-    GTEST_ASSERT_LT(point2 - point, span + 500000);
+    GTEST_ASSERT_LT(point2 - point, span + 500000 * 2);
 }
 
 void work(event_loop_t &loop)
@@ -78,6 +78,27 @@ TEST(TimerTest, TimerFullWorkLoad)
     GTEST_ASSERT_GE(point2 - point, span);
 }
 
+TEST(TimerTest, TimerRemove)
+{
+    event_context_t ctx(event_strategy::epoll);
+    // 100ms
+    auto time_wheel = create_time_manager(make_timespan(0, 100));
+    event_loop_t loop(std::move(time_wheel));
+    ctx.add_event_loop(&loop);
+    microsecond_t point = get_current_time();
+    microsecond_t point2;
+
+    auto tick = loop.add_timer(make_timer(make_timespan(1, 500), [&loop, &point2]() {
+        std::string str = "timer remove failed";
+        GTEST_ASSERT_EQ(str, "");
+    }));
+
+    loop.add_timer(make_timer(make_timespan(1), [&loop, &tick]() { loop.remove_timer(tick); }));
+    loop.add_timer(make_timer(make_timespan(1, 800), [&loop, &tick]() { loop.exit(0); }));
+
+    loop.run();
+}
+
 TEST(TimerTest, SocketTimer)
 {
     socket_addr_t test_addr("127.0.0.1", 2222);
@@ -89,26 +110,26 @@ TEST(TimerTest, SocketTimer)
     // 500ms
     microsecond_t span = 500000, point = 0;
 
-    server.at_client_join([span, &point](tcp::server_t &s, socket_t *socket) {
+    server.on_client_join([span, &point](tcp::server_t &s, tcp::connection_t conn) {
         point = get_current_time();
-        socket->sleep(span);
+        conn.get_socket()->sleep(span);
         socket_buffer_t buffer("hi");
         buffer.expect().origin_length();
-        GTEST_ASSERT_EQ(co::await(socket_awrite, socket, buffer), io_result::ok);
+        GTEST_ASSERT_EQ(co::await(tcp::conn_awrite, conn, buffer), io_result::ok);
     });
 
     server.listen(ctx, test_addr, 1, true);
 
     tcp::client_t client;
     client
-        .at_server_connect([](tcp::client_t &c, socket_t *socket) {
+        .on_server_connect([](tcp::client_t &c, tcp::connection_t conn) {
             socket_buffer_t buffer(2);
             buffer.expect().origin_length();
-            GTEST_ASSERT_EQ(co::await(socket_aread, socket, buffer), io_result::ok);
+            GTEST_ASSERT_EQ(co::await(tcp::conn_aread, conn, buffer), io_result::ok);
         })
-        .at_server_disconnect([&loop](tcp::client_t &c, socket_t *socket) { loop.exit(0); });
+        .on_server_disconnect([&loop](tcp::client_t &c, tcp::connection_t conn) { loop.exit(0); });
 
-    client.connect(ctx, test_addr);
+    client.connect(ctx, test_addr, 1000);
 
     loop.run();
     server.close_server();

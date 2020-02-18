@@ -36,7 +36,7 @@ TEST(EndianTest, Test)
     data2.tag2 = 384;
     data2.version = 2048;
     data2.version2 = 0x8040201008040201UL;
-    memccpy(&data.header, &data2, sizeof(data.header), sizeof(data2));
+    memcpy(&data.header, &data2, sizeof(data2));
     net::endian::cast(data2);
 
     GTEST_ASSERT_EQ(data2.tag, 1);

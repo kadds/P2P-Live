@@ -1,10 +1,18 @@
 #include "net/timer.hpp"
 #include <chrono>
+#include <limits>
 #include <sys/time.h>
 
 namespace net
 {
-timer_t make_timer(microsecond_t span, callback_t callback) { return timer_t(span + get_current_time(), callback); }
+timer_t make_timer(microsecond_t span, timer_callback_t callback)
+{
+    auto cur = get_current_time();
+    if (std::numeric_limits<u64>::max() - span < cur) // overflow
+        return timer_t(std::numeric_limits<u64>::max(), callback);
+
+    return timer_t(span + cur, callback);
+}
 
 std::unique_ptr<time_manager_t> create_time_manager(microsecond_t precision)
 {
@@ -37,14 +45,16 @@ void time_manager_t::tick()
     }
 }
 
-timer_id time_manager_t::insert(timer_t timer)
+timer_registered_t time_manager_t::insert(timer_t timer)
 {
-    timer.timepoint = (timer.timepoint + precision - 1) / precision * precision;
-    if (timer.timepoint <= get_current_time())
+    if (std::numeric_limits<u64>::max() - timer.timepoint < precision - 1) // overflow
     {
-        timer.callback();
-        return -1;
     }
+    else
+    {
+        timer.timepoint = (timer.timepoint + precision - 1) / precision * precision; // alignment
+    }
+
     auto it = map.find(timer.timepoint);
     if (it == map.end())
     {
@@ -53,15 +63,15 @@ timer_id time_manager_t::insert(timer_t timer)
     }
 
     it->second->callbacks.emplace_back(timer.callback, true);
-    return it->second->callbacks.size();
+    return {it->second->callbacks.size(), timer.timepoint};
 }
 
-void time_manager_t::cancel(timer_t timer, timer_id id)
+void time_manager_t::cancel(timer_registered_t reg)
 {
-    auto it = map.find(timer.timepoint);
+    auto it = map.find(reg.timepoint);
     if (it != map.end())
     {
-        it->second->callbacks[id].second = false;
+        it->second->callbacks[reg.id - 1].second = false;
     }
 }
 
@@ -78,12 +88,16 @@ microsecond_t time_manager_t::next_tick_timepoint()
 
 microsecond_t get_current_time()
 {
-    /// FXIME: Use std clock
-    // std::chrono::high_resolution_clock clock;
-    // clock.now();
     struct timeval timeval;
     gettimeofday(&timeval, nullptr);
     return timeval.tv_usec + (microsecond_t)timeval.tv_sec * 1000000;
+}
+
+microsecond_t get_timestamp()
+{
+    return std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now())
+        .time_since_epoch()
+        .count();
 }
 
 } // namespace net

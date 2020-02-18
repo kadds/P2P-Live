@@ -1,4 +1,5 @@
 #pragma once
+#include "event.hpp"
 #include "net.hpp"
 #include <boost/context/fiber.hpp>
 #include <functional>
@@ -41,7 +42,7 @@ template <typename T> class async_result_t
 
 class coroutine_t;
 
-__thread inline coroutine_t *co_cur = nullptr;
+thread_local inline coroutine_t *co_cur = nullptr;
 
 constexpr int stack_size = 1 << 16;
 
@@ -65,6 +66,9 @@ class coroutine_t
         , func(f)
         , prev(nullptr){};
 
+    coroutine_t(const coroutine_t &) = delete;
+    coroutine_t &operator=(const coroutine_t &) = delete;
+
     static coroutine_t *create(std::function<void()> f)
     {
         coroutine_t *co = new coroutine_t(f);
@@ -86,6 +90,15 @@ class coroutine_t
 
         co_cur = this;
         context = std::move(context).resume();
+    }
+
+    // switch to this and call func
+    void resume_with(std::function<void()> func)
+    {
+        prev = co_cur;
+
+        co_cur = this;
+        context = std::move(context).resume_with(std::bind(co_reschedule_wrapper, std::placeholders::_1, this, func));
     }
 
     static void yield()
@@ -120,15 +133,85 @@ class coroutine_t
     }
 };
 
+class paramter_t
+{
+    /// how many times called
+    int times;
+    //. stop right now because timeout
+    bool stop;
+    void *user_ptr;
+
+  public:
+    paramter_t()
+        : times(0)
+        , stop(false)
+        , user_ptr(nullptr){};
+
+    bool is_stop() const { return stop; }
+    int get_times() const { return times; }
+    void set_user_ptr(void *ptr) { user_ptr = ptr; }
+    void *get_user_ptr() const { return user_ptr; }
+    void stop_wait() { stop = true; }
+    void add_times() { times++; }
+};
+
+/// async wait
+///
+///\tparam func function to async wait
+///\tparam args function args request
+///\return return function result when async wait ok
+///\note All Func with coroutine tag is not reentrant. Don't wait for function calls with the same parameters at the
+/// same time.
 template <typename Func, typename... Args> inline static auto await(Func func, Args &&... args)
 {
+    paramter_t param;
     while (1)
     {
-        auto ret = func(std::forward<Args>(args)...);
+        auto ret = func(param, std::forward<Args>(args)...);
         if (ret.is_finish())
         {
             return ret();
         }
+        param.add_times();
+        coroutine_t::yield();
+    }
+}
+
+/// async wait timeout
+///
+///\tparam func function to async wait
+///\tparam args function args request
+///\param span microseconds for maximum timeout
+///\return return function result when async wait ok
+///\note All Func with coroutine tag is not reentrant. Don't wait for function calls with the same parameters at the
+/// same time.
+template <typename Func, typename... Args>
+inline static auto await_timeout(microsecond_t span, Func func, Args &&... args)
+{
+    paramter_t param;
+    auto co = coroutine_t::current();
+    timer_registered_t reg_timer;
+    while (1)
+    {
+        auto ret = func(param, std::forward<Args>(args)...);
+        if (ret.is_finish())
+        {
+            if (param.get_times() != 0)
+            {
+                event_loop_t::current().remove_timer(reg_timer);
+            }
+            return ret();
+        }
+        if (param.get_times() == 0)
+        {
+            auto timer = make_timer(span, [co, &param]() {
+                param.stop_wait();
+                /// XXX: coroutine may destroy by main thread
+                co->resume();
+            });
+            reg_timer = event_loop_t::current().add_timer(timer);
+        }
+        param.add_times();
         coroutine_t::yield();
     }
 }

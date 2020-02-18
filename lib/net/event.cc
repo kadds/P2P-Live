@@ -101,7 +101,7 @@ void event_loop_t::exit(int code)
 
 int event_loop_t::load_factor() { return socket_map.size(); }
 
-static event_loop_t &current() { return *thread_in_loop; }
+event_loop_t &event_loop_t::current() { return *thread_in_loop; }
 
 event_loop_t &event_context_t::add_socket(socket_t *socket)
 {
@@ -145,9 +145,9 @@ event_loop_t *event_context_t::remove_socket(socket_t *socket)
     return loop;
 }
 
-timer_id event_loop_t::add_timer(timer_t timer) { return time_manager->insert(timer); }
+timer_registered_t event_loop_t::add_timer(timer_t timer) { return time_manager->insert(timer); }
 
-void event_loop_t::remove_timer(timer_t timer, timer_id id) { time_manager->cancel(timer, id); }
+void event_loop_t::remove_timer(timer_registered_t reg) { time_manager->cancel(reg); }
 
 void event_context_t::add_event_loop(event_loop_t *loop)
 {

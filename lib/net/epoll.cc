@@ -1,5 +1,6 @@
 #include "net/epoll.hpp"
 #include "net/net_exception.hpp"
+#include <cstring>
 #include <sys/epoll.h>
 namespace net
 {
@@ -25,6 +26,7 @@ void event_epoll_demultiplexer::add(handle_t handle, event_type_t type)
         e |= EPOLLERR;
 
     epoll_event ev;
+    memset(&ev, 0, sizeof(ev));
     ev.events = e | EPOLLET;
     ev.data.fd = handle;
     epoll_ctl(fd, EPOLL_CTL_ADD, handle, &ev);
@@ -78,6 +80,7 @@ void event_epoll_demultiplexer::remove(handle_t handle, event_type_t type)
         e |= EPOLLERR;
 
     epoll_event ev;
+    memset(&ev, 0, sizeof(ev));
     ev.events = e;
     ev.data.fd = handle;
     epoll_ctl(fd, EPOLL_CTL_DEL, handle, &ev);
