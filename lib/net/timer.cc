@@ -63,7 +63,7 @@ timer_registered_t time_manager_t::insert(timer_t timer)
     }
 
     it->second->callbacks.emplace_back(timer.callback, true);
-    return {it->second->callbacks.size(), timer.timepoint};
+    return {(timer_id)it->second->callbacks.size(), timer.timepoint};
 }
 
 void time_manager_t::cancel(timer_registered_t reg)

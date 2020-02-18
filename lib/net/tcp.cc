@@ -398,5 +398,6 @@ void client_t::close()
         socket = nullptr;
     }
 }
+bool client_t::is_connect() const { return socket->is_connection_alive(); }
 
 } // namespace net::tcp

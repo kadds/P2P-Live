@@ -151,7 +151,7 @@ class client_t
     socket_addr_t get_connect_addr() const { return connect_addr; }
     socket_t *get_socket() const { return socket; }
     tcp::connection_t get_connection() const { return socket; }
-    bool is_connect() const { return socket->is_connection_alive(); }
+    bool is_connect() const;
 };
 
 } // namespace net::tcp
