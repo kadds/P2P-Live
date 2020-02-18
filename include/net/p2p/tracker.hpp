@@ -228,7 +228,6 @@ class tracker_server_t
     /// save index of tracker_infos
     std::unordered_map<socket_addr_t, std::unique_ptr<tracker_info_t>, addr_hash_func> trackers;
     std::unordered_map<socket_addr_t, size_t, addr_hash_func> nodes;
-
     std::vector<node_info_t> node_infos;
     error_handler_t error_handler;
 

@@ -92,19 +92,18 @@ void tracker_server_t::server_main(tcp::connection_t conn)
             request.max_count = std::min((int)request.max_count, 500);
             head.version = 4;
             head.v4.msg_type = tracker_packet::get_nodes_respond;
+            std::unique_ptr<char[]> data =
+                std::make_unique<char[]>(sizeof(get_nodes_respond_t) + request.max_count * sizeof(peer_node_t));
+            get_nodes_respond_t *respond = (get_nodes_respond_t *)data.get();
+            // use buffer from 'data'
+            socket_buffer_t send_buffer((byte *)data.get(),
+                                        sizeof(get_nodes_respond_t) + request.max_count * sizeof(peer_node_t));
+            send_buffer.expect().origin_length();
+            // skip head
+            send_buffer.walk_step(sizeof(get_nodes_respond_t));
+            int i = 0;
             if (request.strategy == request_strategy::random)
             {
-                std::unique_ptr<char[]> data =
-                    std::make_unique<char[]>(sizeof(get_nodes_respond_t) + request.max_count * sizeof(peer_node_t));
-                get_nodes_respond_t *respond = (get_nodes_respond_t *)data.get();
-                // use buffer from 'data'
-                socket_buffer_t send_buffer((byte *)data.get(),
-                                            sizeof(get_nodes_respond_t) + request.max_count * sizeof(peer_node_t));
-                send_buffer.expect().origin_length();
-                // skip head
-                send_buffer.walk_step(sizeof(get_nodes_respond_t));
-
-                int i = 0;
                 if (node_infos.size() > 0)
                 {
                     int start = rand() % node_infos.size();
@@ -123,26 +122,27 @@ void tracker_server_t::server_main(tcp::connection_t conn)
                         }
                     }
                 }
-
-                // set head
-                respond->sid = request.sid;
-                respond->available_count = node_infos.size();
-                respond->return_count = i;
-
-                send_buffer.expect().origin_length();
-                assert(endian::cast_inplace(*respond, send_buffer));
-                send_buffer.expect().length(sizeof(get_nodes_respond_t) + i * sizeof(peer_node_t));
-
-                co::await(tcp::conn_awrite_packet, conn, head, send_buffer);
             }
             else if (request.strategy == request_strategy::min_workload)
             {
+                /// TODO: sort by workload and return to client
             }
             else
             {
                 // close it
                 return;
             }
+
+            // set head
+            respond->sid = request.sid;
+            respond->available_count = node_infos.size();
+            respond->return_count = i;
+
+            send_buffer.expect().origin_length();
+            assert(endian::cast_inplace(*respond, send_buffer));
+            send_buffer.expect().length(sizeof(get_nodes_respond_t) + i * sizeof(peer_node_t));
+
+            co::await(tcp::conn_awrite_packet, conn, head, send_buffer);
         }
         else if (head.v4.msg_type == tracker_packet::get_trackers_request)
         {
@@ -399,8 +399,9 @@ void tracker_node_client_t::main(tcp::connection_t conn)
             if (tracker_update_handler)
                 tracker_update_handler(*this, node, (u64)respond.return_count);
         }
-        else if (head.v4.msg_type == tracker_packet::heartbeat)
+        else
         {
+            return;
         }
     }
 }
