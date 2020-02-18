@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 /// forward
@@ -17,169 +18,187 @@ class socket_t;
 
 namespace net::p2p
 {
-using session_id_t = u64;
+using fragment_id_t = u64;
+using session_id_t = u32;
 namespace peer_msg_type
 {
 enum : u8
 {
     init_request = 0,
     init_respond,
-    data_request,
-    data_package,
+    fragment_request,
+    fragment_respond,
+
+    meta_respond = 9,
+
+    cancel = 10,
+    get_meta = 11,
+    key_exchange = 12,
 
     heart = 0xFF,
 };
 }
 
 #pragma pack(push, 1)
-/// send by client----------------------
-// type = 0
+
 struct peer_init_request_t
 {
     u8 type;
-    u64 sid;
-    using member_list_t = serialization::typelist_t<u8, u64>;
+    session_id_t sid;
+    using member_list_t = serialization::typelist_t<u8, session_id_t>;
 };
 
-// type = 2
-struct peer_data_request_t
+struct peer_fragment_request_t
 {
     u8 type;
     u8 priority;
-    u64 data_id;
-    using member_list_t = serialization::typelist_t<u8, u8, u64>;
+    u8 count;
+    fragment_id_t ids[0];
+    using member_list_t = serialization::typelist_t<u8, u8, u8>;
 };
 
-// type = 0xFF 0xFE
-struct peer_heart_t
+struct peer_cancel_t
 {
     u8 type;
+    u8 count;
+    fragment_id_t id[0];
+    using member_list_t = serialization::typelist_t<u8, u8>;
 };
 
-/// send by server----------------------
-// type = 1
+struct peer_request_metainfo_t
+{
+    u8 type;
+    u64 key;
+    using member_list_t = serialization::typelist_t<u8, u64>;
+};
+
 struct peer_init_respond_t
 {
     u8 type;
-    u64 first_data_id;
-    u64 last_data_id;
-    using member_list_t = serialization::typelist_t<u8, u64, u64>;
+    fragment_id_t first_data_id;
+    fragment_id_t last_data_id;
+    using member_list_t = serialization::typelist_t<u8, fragment_id_t, fragment_id_t>;
 };
-// type = 2
-struct peer_data_package_t
+
+struct peer_fragment_respond_t
 {
     u8 type;
-    u8 none;
-    u16 size;
-    u32 package_id;
-    u64 data_id;
+    fragment_id_t fid;
+    u32 frame_size;
     u8 data[0];
-    using member_list_t = serialization::typelist_t<u8, u8, u16, u32, u64>;
+    using member_list_t = serialization::typelist_t<u8, u16, fragment_id_t, u32>;
+};
+
+struct peer_fragment_respond_rest_t
+{
+    u8 type;
+    u8 data[0];
+    using member_list_t = serialization::typelist_t<u8>;
+};
+
+struct peer_meta_respond_t
+{
+    u8 type;
+    u64 key;
+    u8 data[0];
+    using member_list_t = serialization::typelist_t<u8, u64>;
 };
 
 #pragma pack(pop)
 
 /// peer tp peer
 
-struct peer_t
+struct peer_info_t
 {
-    rudp_t udp;
-    bool ping_ok;
-    bool in_request;
-    int mark;
-    u64 current_request_data_id;
-    u64 last_online_timestamp;
+    std::queue<std::pair<std::vector<fragment_id_t>, u8>> frag_request_queue;
+    std::queue<u64> meta_request_queue;
+    std::queue<std::tuple<fragment_id_t, socket_buffer_t>> fragment_send_queue;
+    std::queue<std::tuple<u64, socket_buffer_t>> meta_send_queue;
+
+    std::unordered_map<fragment_id_t, socket_buffer_t> send_buffers;
+
+    std::unordered_map<fragment_id_t, socket_buffer_t> recv_buffers;
+
     socket_addr_t remote_address;
-    peer_t()
-        : ping_ok(false)
-        , in_request(false)
-        , mark(0)
+    microsecond_t last_ping;
+    bool has_connect;
+    peer_info_t()
+        : last_ping(0)
+        , has_connect(false)
     {
     }
-    bool operator==(const peer_t &rt) const { return rt.remote_address == remote_address; }
-    bool operator!=(const peer_t &rt) const { return !operator==(rt); }
+
+    bool operator==(const peer_info_t &rt) const { return rt.remote_address == remote_address; }
+    bool operator!=(const peer_info_t &rt) const { return !operator==(rt); }
 };
 
-/// just request peer server and recv data
-/// connect to tracker and get peer nodes, a short connection. connect to tracker when need get get nodes.
-/// add to peer_client
-class peer_client_t
+struct peer_hash_t
+{
+    u64 operator()(const socket_addr_t &p) const { return p.hash(); }
+};
+
+class peer_t
 {
   public:
-    using peer_server_data_recv_t = std::function<void(peer_client_t &, peer_data_package_t &data, peer_t *)>;
-    using peer_disconnect_t = std::function<void(peer_client_t &, peer_t *)>;
-    using peer_connect_ok_t = std::function<void(peer_client_t &, peer_t *)>;
+    using peer_data_recv_t = std::function<void(peer_t &, socket_buffer_t &, u64 id_key, peer_info_t *)>;
+    using peer_disconnect_t = std::function<void(peer_t &, peer_info_t *)>;
+    using peer_connect_ok_t = std::function<void(peer_t &, peer_info_t *)>;
+
+    using pull_request_t = std::function<void(peer_t &, peer_info_t *, u64 id_key)>;
 
   private:
+    rudp_t udp;
     session_id_t sid;
-    std::vector<std::unique_ptr<peer_t>> peers;
-    peer_server_data_recv_t handler;
+    std::unordered_map<socket_addr_t, std::unique_ptr<peer_info_t>, peer_hash_t> peers;
+    std::vector<std::unique_ptr<peer_info_t>> noconnect_peers;
+    peer_data_recv_t meta_recv_handler;
+    peer_data_recv_t fragment_recv_handler;
+
     peer_disconnect_t disconnect_handler;
     peer_connect_ok_t connect_handler;
-    void client_main(peer_t *peer);
+    pull_request_t fragment_handler;
+    pull_request_t meta_handler;
+    void main();
+
+    std::queue<peer_info_t *> sendable_peers;
+
+    void update_fragments(std::vector<fragment_id_t> ids, u8 priority, peer_info_t *target);
+    void update_metainfo(u64 key, peer_info_t *target);
+
+    void send_init(peer_info_t *target);
+    void send_fragments(fragment_id_t id, socket_buffer_t buffer, peer_info_t *target);
+    void do_write();
+
+    peer_info_t *find_peer(socket_addr_t addr);
 
   public:
-    peer_client_t(session_id_t sid);
-    ~peer_client_t();
-    peer_client_t(const peer_client_t &) = delete;
-    peer_client_t &operator=(const peer_client_t &) = delete;
+    peer_t(session_id_t sid);
+    ~peer_t();
+    peer_t(const peer_t &) = delete;
+    peer_t &operator=(const peer_t &) = delete;
 
-    peer_t *add_peer(event_context_t &context);
-    void connect_to_peer(peer_t *peer, socket_addr_t server_addr);
+    void bind(event_context_t &context);
+    void bind(event_context_t &context, socket_addr_t addr_to_bind, bool reuse_addr = false);
 
-    peer_client_t &on_peer_data_recv(peer_server_data_recv_t handler);
-    peer_client_t &on_peer_disconnect(peer_disconnect_t handler);
-    peer_client_t &on_peer_connect(peer_connect_ok_t handler);
+    peer_info_t *add_peer();
+    void connect_to_peer(peer_info_t *peer, socket_addr_t server_addr);
+    void disconnect(peer_info_t *peer);
 
-    void pull_data_from_peer(u64 data_id);
-};
+    peer_t &on_meta_data_recv(peer_data_recv_t handler);
+    peer_t &on_fragment_recv(peer_data_recv_t handler);
+    peer_t &on_peer_disconnect(peer_disconnect_t handler);
+    peer_t &on_peer_connect(peer_connect_ok_t handler);
 
-class peer_server_t;
+    peer_t &on_fragment_pull_request(pull_request_t handler);
+    peer_t &on_meta_pull_request(pull_request_t handler);
 
-struct speer_t
-{
-    rudp_t udp;
-    bool ping_ok;
-    u64 last_online_timestamp;
-    socket_addr_t remote_address;
-    speer_t()
-        : ping_ok(false)
-    {
-    }
-    bool operator==(const speer_t &rt) const { return rt.remote_address == remote_address; }
-    bool operator!=(const speer_t &rt) const { return rt.remote_address != remote_address; }
-};
+    void pull_fragment_from_peer(peer_info_t *peer, std::vector<fragment_id_t> fid, u8 priority);
+    void pull_meta_data(peer_info_t *peer, u64 key);
 
-struct hash_func_t
-{
-    u64 operator()(const socket_addr_t &addr) const { return addr.hash(); }
-};
-/// a peer server can send data to other peer client
-/// connect to tracker and register this as a peer node, this is a long connection.
+    void send_fragment_to_peer(peer_info_t *peer, fragment_id_t fid, socket_buffer_t buffer);
+    void send_meta_data_to_peer(peer_info_t *peer, u64 key, socket_buffer_t buffer);
 
-class peer_server_t
-{
-  public:
-    using client_join_handler_t = std::function<void(peer_server_t &, speer_t *)>;
-    using client_data_request_handler_t = std::function<void(peer_server_t &, peer_data_request_t &, speer_t *)>;
-
-  private:
-    client_join_handler_t client_handler;
-    client_data_request_handler_t data_handler;
-    std::unordered_map<socket_addr_t, std::unique_ptr<speer_t>, hash_func_t> peers_map;
-    void peer_main(speer_t *);
-
-  public:
-    peer_server_t() = default;
-    peer_server_t(const peer_server_t &) = delete;
-    peer_server_t &operator=(const peer_server_t &) = delete;
-
-    speer_t *add_peer(event_context_t &context, socket_addr_t peer_addr);
-
-    peer_server_t &on_client_join(client_join_handler_t handler);
-    peer_server_t &on_client_pull(client_data_request_handler_t handler);
-
-    void send_package_to_peer(speer_t *peer, u64 data_id, socket_buffer_t buffer);
+    socket_t *get_socket() const { return udp.get_socket(); }
 };
 
 } // namespace net::p2p

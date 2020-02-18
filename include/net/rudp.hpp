@@ -16,10 +16,14 @@ class rudp_t
   public:
     using data_handler_t = std::function<void(rudp_t &, socket_buffer_t buffer)>;
 
+    /// return false will discard current packet
+    using unknown_handler_t = std::function<bool(socket_addr_t address)>;
+    using timeout_handler_t = std::function<void(socket_addr_t)>;
+
   private:
     // impl idiom
     /// 隔离第三方库
-    rudp_impl_t *kcp_impl;
+    rudp_impl_t *impl;
 
   public:
     rudp_t();
@@ -28,22 +32,46 @@ class rudp_t
     rudp_t(const rudp_t &) = delete;
     rudp_t &operator=(const rudp_t &) = delete;
 
+    /// bind a local address
     void bind(event_context_t &context, socket_addr_t local_addr, bool reuse_addr = false);
 
-    /// set remote address to receive
-    void connect(socket_addr_t addr);
+    /// bind random port
+    void bind(event_context_t &context);
+
+    /// addr remote address
+    void add_connection(socket_addr_t addr, microsecond_t inactive_timeout);
+
+    /// clear remote address restrictions
+    void remove_connection(socket_addr_t addr);
+
+    bool removeable(socket_addr_t addr);
+
+    rudp_t &on_unknown_packet(unknown_handler_t handler);
+
+    rudp_t &on_connection_timeout(timeout_handler_t handler);
 
     /// call 'bind' before call this function
     void run(std::function<void()> func);
 
-    co::async_result_t<io_result> awrite(co::paramter_t &param, socket_buffer_t &buffer);
-    co::async_result_t<io_result> aread(co::paramter_t &param, socket_buffer_t &buffer);
+    co::async_result_t<io_result> awrite(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t address);
+    co::async_result_t<io_result> aread(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t &address);
 
-    socket_t *get_socket();
+    socket_t *get_socket() const;
+
+    void close_all_remote();
+
+    int get_mtu() const
+    {
+        return 1472 - 24; // kcp header 24
+    }
+
+    void close();
 };
 
 // wrapper functions
-co::async_result_t<io_result> rudp_awrite(co::paramter_t &param, rudp_t *rudp, socket_buffer_t &buffer);
-co::async_result_t<io_result> rudp_aread(co::paramter_t &param, rudp_t *rudp, socket_buffer_t &buffer);
+co::async_result_t<io_result> rudp_awrite(co::paramter_t &param, rudp_t *rudp, socket_buffer_t &buffer,
+                                          socket_addr_t address);
+co::async_result_t<io_result> rudp_aread(co::paramter_t &param, rudp_t *rudp, socket_buffer_t &buffer,
+                                         socket_addr_t &address);
 
 } // namespace net

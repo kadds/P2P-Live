@@ -148,5 +148,4 @@ template <typename T> inline bool cast_inplace(T &val, socket_buffer_t &buffer)
     cast<T>(val);
     return true;
 }
-
 } // namespace net::endian

@@ -13,29 +13,29 @@ TEST(PeerTest, PeerConnection)
     event_loop_t loop;
     context.add_event_loop(&loop);
 
-    peer_server_t server;
+    peer_t server(1), client(1);
 
     int ok = 0;
 
-    server.on_client_join([&ok](peer_server_t &server, speer_t *speer) { ok++; });
-
-    peer_client_t client(1);
-
-    client.on_peer_disconnect([](peer_client_t &client, peer_t *peer) {
-        std::string str = "peer client connect error";
-        GTEST_ASSERT_EQ("", str);
-    });
-
-    client.on_peer_connect([&ok, &loop](peer_client_t &client, peer_t *peer) {
+    server.on_peer_connect([&ok, &loop](peer_t &server, peer_info_t *peer) {
         ok++;
-        loop.exit(0);
+        if (ok >= 2)
+            loop.exit(0);
     });
-    auto client_peer = client.add_peer(context);
-    auto client_addr = client_peer->udp.get_socket()->local_addr();
 
-    auto server_peer = server.add_peer(context, socket_addr_t("127.0.0.1", client_addr.get_port()));
-    auto server_addr = server_peer->udp.get_socket()->local_addr();
-    client.connect_to_peer(client_peer, socket_addr_t("127.0.0.1", server_addr.get_port()));
+    client.on_peer_connect([&ok, &loop](peer_t &client, peer_info_t *peer) {
+        ok++;
+        if (ok >= 2)
+            loop.exit(0);
+    });
+    client.bind(context);
+    server.bind(context);
+
+    auto server_peer = client.add_peer();
+    auto client_peer = server.add_peer();
+
+    client.connect_to_peer(server_peer, socket_addr_t("127.0.0.1", server.get_socket()->local_addr().get_port()));
+    server.connect_to_peer(client_peer, socket_addr_t("127.0.0.1", client.get_socket()->local_addr().get_port()));
 
     loop.add_timer(make_timer(net::make_timespan(1), [&loop]() { loop.exit(-1); }));
     loop.run();
@@ -44,52 +44,60 @@ TEST(PeerTest, PeerConnection)
 
 TEST(PeerTest, DataTransport)
 {
+    constexpr u64 test_size_bytes = 512;
     event_context_t context(event_strategy::epoll);
     event_loop_t loop;
     context.add_event_loop(&loop);
 
-    peer_server_t server;
+    peer_t server(1), client(1);
 
-    server.on_client_pull([](peer_server_t &server, peer_data_request_t &request, speer_t *peer) {
-        if (request.data_id == 1)
-        {
-            socket_buffer_t buffer(2);
+    std::string name = "test string";
+    server
+        .on_meta_pull_request([&name, test_size_bytes](peer_t &server, peer_info_t *peer, u64 key) {
+            socket_buffer_t buffer(name);
             buffer.expect().origin_length();
-            buffer.get_raw_ptr()[0] = 0xFE;
-            buffer.get_raw_ptr()[1] = 0xA0;
-            server.send_package_to_peer(peer, 1, std::move(buffer));
-        }
-        GTEST_ASSERT_EQ(request.data_id, 1);
-    });
+            server.send_meta_data_to_peer(peer, key, std::move(buffer));
+        })
+        .on_fragment_pull_request([](peer_t &server, peer_info_t *peer, fragment_id_t fid) {
+            GTEST_ASSERT_GE(fid, 1);
+            GTEST_ASSERT_LE(fid, 2);
+            socket_buffer_t buffer(test_size_bytes);
+            buffer.expect().origin_length();
+            buffer.get_raw_ptr()[test_size_bytes - 1] = fid;
+            server.send_fragment_to_peer(peer, fid, std::move(buffer));
+        });
 
-    peer_client_t client(1);
+    int x = 0;
+    client.on_peer_connect([](peer_t &client, peer_info_t *peer) { client.pull_meta_data(peer, 0); })
+        .on_meta_data_recv([&loop, &name](peer_t &client, socket_buffer_t &buffer, u64 key, peer_info_t *peer) {
+            GTEST_ASSERT_EQ(buffer.get_data_length(), name.size());
+            std::string str = buffer.to_string();
+            GTEST_ASSERT_EQ(str, name);
+            client.pull_fragment_from_peer(peer, {1, 2}, 0);
+        })
+        .on_fragment_recv([&loop, &name, &x, test_size_bytes](peer_t &client, socket_buffer_t &buffer, fragment_id_t id,
+                                                              peer_info_t *peer) {
+            GTEST_ASSERT_EQ(buffer.get_data_length(), test_size_bytes);
+            GTEST_ASSERT_EQ(buffer.get_raw_ptr()[test_size_bytes - 1], id);
+            x++;
+            if (x >= 2)
+            {
+                loop.exit(0);
+            }
+        });
 
-    client.on_peer_disconnect([](peer_client_t &client, peer_t *peer) {
-        std::string str = "peer client connect error";
-        GTEST_ASSERT_EQ("", str);
-    });
+    client.bind(context);
+    server.bind(context);
 
-    client.on_peer_connect([](peer_client_t &client, peer_t *peer) { client.pull_data_from_peer(1); });
+    auto server_peer = client.add_peer();
+    auto client_peer = server.add_peer();
 
-    bool data_recved = false;
-    client.on_peer_data_recv([&loop, &data_recved](peer_client_t &client, peer_data_package_t &data, peer_t *peer) {
-        GTEST_ASSERT_EQ(data.size, 2);
-        GTEST_ASSERT_EQ(data.data[0], 0xFE);
-        GTEST_ASSERT_EQ(data.data[1], 0xA0);
-        data_recved = true;
-        loop.exit(0);
-    });
+    client.connect_to_peer(server_peer, socket_addr_t("127.0.0.1", server.get_socket()->local_addr().get_port()));
+    server.connect_to_peer(client_peer, socket_addr_t("127.0.0.1", client.get_socket()->local_addr().get_port()));
 
-    auto client_peer = client.add_peer(context);
-    auto client_addr = client_peer->udp.get_socket()->local_addr();
-
-    auto server_peer = server.add_peer(context, socket_addr_t("127.0.0.1", client_addr.get_port()));
-    auto server_addr = server_peer->udp.get_socket()->local_addr();
-    client.connect_to_peer(client_peer, socket_addr_t("127.0.0.1", server_addr.get_port()));
-
-    loop.add_timer(make_timer(net::make_timespan(1), [&loop]() { loop.exit(-1); }));
+    // loop.add_timer(make_timer(net::make_timespan(2), [&loop]() { loop.exit(-1); }));
     loop.run();
-    GTEST_ASSERT_EQ(data_recved, true);
+    GTEST_ASSERT_EQ(x, 2);
 }
 
 TEST(PeerTest, TrackerPingPong)

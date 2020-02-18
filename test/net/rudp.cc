@@ -18,17 +18,20 @@ TEST(RUDPTest, Interface)
     rudp1.bind(context, addr1, true);
     rudp2.bind(context, addr2, true);
 
-    rudp1.connect(addr2);
-    rudp2.connect(addr1);
+    rudp1.add_connection(addr2, make_timespan(5));
+    rudp2.add_connection(addr1, make_timespan(5));
 
     int count_flag = 0;
 
-    rudp1.run([&rudp1, &loop, &count_flag]() {
+    rudp1.run([&rudp1, &loop, &count_flag, &addr2]() {
+        socket_addr_t addr;
         socket_buffer_t buffer(test_data);
         buffer.expect().origin_length();
-        GTEST_ASSERT_EQ(co::await(rudp_awrite, &rudp1, buffer), io_result::ok);
+        GTEST_ASSERT_EQ(co::await(rudp_awrite, &rudp1, buffer, addr2), io_result::ok);
         buffer.expect().origin_length();
-        GTEST_ASSERT_EQ(co::await(rudp_aread, &rudp1, buffer), io_result::ok);
+        GTEST_ASSERT_EQ(co::await(rudp_aread, &rudp1, buffer, addr), io_result::ok);
+        GTEST_ASSERT_EQ(addr, addr2);
+
         GTEST_ASSERT_EQ(buffer.to_string(), test_data);
         if (++count_flag > 1)
         {
@@ -36,19 +39,23 @@ TEST(RUDPTest, Interface)
         }
     });
 
-    rudp2.run([&rudp2, &loop, &count_flag]() {
+    rudp2.run([&rudp2, &loop, &count_flag, &addr1]() {
+        socket_addr_t addr;
+
         socket_buffer_t buffer(test_data);
         buffer.expect().origin_length();
-        GTEST_ASSERT_EQ(co::await(rudp_awrite, &rudp2, buffer), io_result::ok);
+        GTEST_ASSERT_EQ(co::await(rudp_awrite, &rudp2, buffer, addr1), io_result::ok);
         buffer.expect().origin_length();
-        GTEST_ASSERT_EQ(co::await(rudp_aread, &rudp2, buffer), io_result::ok);
+        GTEST_ASSERT_EQ(co::await(rudp_aread, &rudp2, buffer, addr), io_result::ok);
+        GTEST_ASSERT_EQ(addr, addr1);
+
         GTEST_ASSERT_EQ(buffer.to_string(), test_data);
         if (++count_flag > 1)
         {
             loop.exit(0);
         }
     });
-    // loop.add_timer(make_timer(net::make_timespan(1), [&loop]() { loop.exit(-1); }));
+    loop.add_timer(make_timer(net::make_timespan(1), [&loop]() { loop.exit(-1); }));
     loop.run();
     GTEST_ASSERT_EQ(count_flag, 2);
 }

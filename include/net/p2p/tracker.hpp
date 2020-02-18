@@ -1,6 +1,7 @@
 #pragma once
 #include "../endian.hpp"
 #include "../net.hpp"
+#include "../rudp.hpp"
 #include "../tcp.hpp"
 #include <functional>
 #include <unordered_set>
@@ -221,6 +222,7 @@ class tracker_server_t
     constexpr static inline u64 tick_times = 3;
 
     tcp::server_t server;
+    rudp_t udp;
 
     void server_main(tcp::connection_t conn);
     void client_main(tcp::connection_t conn);

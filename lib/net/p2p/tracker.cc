@@ -502,4 +502,6 @@ tracker_node_client_t &tracker_node_client_t::on_error(error_handler_t handler)
     return *this;
 }
 
+void tracker_node_client_t::connect_node(peer_node_t node) {}
+
 } // namespace net::p2p
