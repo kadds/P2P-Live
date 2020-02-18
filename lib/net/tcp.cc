@@ -16,8 +16,8 @@ co::async_result_t<io_result> connection_t::aread(co::paramter_t &param, socket_
     return socket_aread(param, socket, buffer);
 }
 
-/// wait next package and read tcp application head
-co::async_result_t<io_result> connection_t::aread_package_head(co::paramter_t &param, package_head_t &head)
+/// wait next packet and read tcp application head
+co::async_result_t<io_result> connection_t::aread_packet_head(co::paramter_t &param, package_head_t &head)
 {
     /// XXX: there is a memory allocate in head.
     if (param.get_user_ptr() == 0) /// version none, first read
@@ -95,7 +95,7 @@ co::async_result_t<io_result> connection_t::aread_package_head(co::paramter_t &p
     return res;
 }
 
-co::async_result_t<io_result> connection_t::aread_package_content(co::paramter_t &param, socket_buffer_t &buffer)
+co::async_result_t<io_result> connection_t::aread_packet_content(co::paramter_t &param, socket_buffer_t &buffer)
 {
     return socket_aread(param, socket, buffer);
 }
@@ -121,8 +121,8 @@ co::async_result_t<io_result> set_head_and_send(co::paramter_t &param, E &head, 
     return ret;
 }
 
-co::async_result_t<io_result> connection_t::awrite_package(co::paramter_t &param, package_head_t &head,
-                                                           socket_buffer_t &buffer)
+co::async_result_t<io_result> connection_t::awrite_packet(co::paramter_t &param, package_head_t &head,
+                                                          socket_buffer_t &buffer)
 {
 send_head:
     if (param.get_user_ptr() == 0)
@@ -181,28 +181,27 @@ send_data:
     return socket_awrite(param, socket, buffer);
 }
 
-co::async_result_t<io_result> connection_awrite(co::paramter_t &param, connection_t conn, socket_buffer_t &buffer)
+co::async_result_t<io_result> conn_awrite(co::paramter_t &param, connection_t conn, socket_buffer_t &buffer)
 {
     return conn.awrite(param, buffer);
 }
-co::async_result_t<io_result> connection_aread(co::paramter_t &param, connection_t conn, socket_buffer_t &buffer)
+co::async_result_t<io_result> conn_aread(co::paramter_t &param, connection_t conn, socket_buffer_t &buffer)
 {
     return conn.aread(param, buffer);
 }
-co::async_result_t<io_result> connection_aread_package_head(co::paramter_t &param, connection_t conn,
-                                                            package_head_t &head)
+co::async_result_t<io_result> conn_aread_packet_head(co::paramter_t &param, connection_t conn, package_head_t &head)
 {
-    return conn.aread_package_head(param, head);
+    return conn.aread_packet_head(param, head);
 }
-co::async_result_t<io_result> connection_aread_package_content(co::paramter_t &param, connection_t conn,
-                                                               socket_buffer_t &buffer)
-{
-    return conn.aread_package_content(param, buffer);
-}
-co::async_result_t<io_result> connection_awrite_package(co::paramter_t &param, connection_t conn, package_head_t &head,
+co::async_result_t<io_result> conn_aread_packet_content(co::paramter_t &param, connection_t conn,
                                                         socket_buffer_t &buffer)
 {
-    return conn.awrite_package(param, head, buffer);
+    return conn.aread_packet_content(param, buffer);
+}
+co::async_result_t<io_result> conn_awrite_packet(co::paramter_t &param, connection_t conn, package_head_t &head,
+                                                 socket_buffer_t &buffer)
+{
+    return conn.awrite_packet(param, head, buffer);
 }
 
 server_t::server_t()
@@ -294,19 +293,19 @@ void server_t::close_server()
     }
 }
 
-server_t &server_t::at_client_join(server_handler_t handler)
+server_t &server_t::on_client_join(handler_t handler)
 {
     join_handler = handler;
     return *this;
 }
 
-server_t &server_t::at_client_exit(server_handler_t handler)
+server_t &server_t::on_client_exit(handler_t handler)
 {
     exit_handler = handler;
     return *this;
 }
 
-server_t &server_t::at_client_connection_error(server_error_handler_t handler)
+server_t &server_t::on_client_error(error_handler_t handler)
 {
     error_handler = handler;
     return *this;
@@ -314,7 +313,6 @@ server_t &server_t::at_client_connection_error(server_error_handler_t handler)
 
 client_t::client_t()
     : socket(nullptr)
-    , is_connect_server(false)
 {
 }
 
@@ -327,7 +325,6 @@ void client_t::wait_server(socket_addr_t address, microsecond_t timeout)
     {
         try
         {
-            is_connect_server = true;
             if (join_handler)
                 join_handler(*this, socket);
         } catch (net::net_connect_exception &e)
@@ -363,19 +360,19 @@ void client_t::connect(event_context_t &context, socket_addr_t address, microsec
     socket->startup_coroutine(cot);
 }
 
-client_t &client_t::at_server_connect(client_handler_t handler)
+client_t &client_t::on_server_connect(handler_t handler)
 {
     join_handler = handler;
     return *this;
 }
 
-client_t &client_t::at_server_disconnect(client_handler_t handler)
+client_t &client_t::on_server_disconnect(handler_t handler)
 {
     exit_handler = handler;
     return *this;
 }
 
-client_t &client_t::at_server_connection_error(client_error_handler_t handler)
+client_t &client_t::on_server_error(error_handler_t handler)
 {
     error_handler = handler;
     return *this;
@@ -387,7 +384,6 @@ void client_t::close()
         return;
     if (exit_handler)
         exit_handler(*this, socket);
-    is_connect_server = false;
     context->remove_socket(socket);
     if (co::coroutine_t::in_coroutine(socket->get_coroutine()) && socket->get_coroutine() != nullptr)
     {

@@ -5,7 +5,7 @@
 
 namespace net
 {
-timer_t make_timer(microsecond_t span, callback_t callback)
+timer_t make_timer(microsecond_t span, timer_callback_t callback)
 {
     auto cur = get_current_time();
     if (std::numeric_limits<u64>::max() - span < cur) // overflow

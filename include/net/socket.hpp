@@ -8,12 +8,6 @@
 
 namespace net
 {
-enum class socket_status
-{
-    none,
-    closed,
-    connected,
-};
 
 class socket_t
 {

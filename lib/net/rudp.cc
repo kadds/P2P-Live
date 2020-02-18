@@ -12,7 +12,7 @@ int udp_output(const char *buf, int len, ikcpcb *kcp, void *user);
 class rudp_impl_t
 {
     event_context_t *context;
-    data_handler_t handler;
+    rudp_t::data_handler_t handler;
     ikcpcb *pcb;
     friend int udp_output(const char *buf, int len, ikcpcb *kcp, void *user);
     socket_t *socket;
@@ -161,7 +161,7 @@ class rudp_impl_t
 class rudp_acceptor_impl_t
 {
     event_context_t *context;
-    data_handler_t handler;
+    rudp_t::data_handler_t handler;
     ikcpcb *pcb;
     friend int udp_output(const char *buf, int len, ikcpcb *kcp, void *user);
     socket_t *socket;

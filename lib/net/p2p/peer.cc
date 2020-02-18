@@ -91,19 +91,19 @@ void peer_client_t::connect_to_peer(peer_t *peer, socket_addr_t server_addr)
     peer->udp.run(std::bind(&peer_client_t::client_main, this, peer));
 }
 
-peer_client_t &peer_client_t::at_peer_disconnect(peer_disconnect_t handler)
+peer_client_t &peer_client_t::on_peer_disconnect(peer_disconnect_t handler)
 {
     this->disconnect_handler = handler;
     return *this;
 }
 
-peer_client_t &peer_client_t::at_peer_connect(peer_connect_ok_t handler)
+peer_client_t &peer_client_t::on_peer_connect(peer_connect_ok_t handler)
 {
     this->connect_handler = handler;
     return *this;
 }
 
-peer_client_t &peer_client_t::at_peer_data_recv(peer_server_data_recv_t handler)
+peer_client_t &peer_client_t::on_peer_data_recv(peer_server_data_recv_t handler)
 {
     this->handler = handler;
     return *this;
@@ -179,13 +179,13 @@ speer_t *peer_server_t::add_peer(event_context_t &context, socket_addr_t addr)
     return ptr;
 }
 
-peer_server_t &peer_server_t::at_client_join(client_join_handler_t handler)
+peer_server_t &peer_server_t::on_client_join(client_join_handler_t handler)
 {
     client_handler = handler;
     return *this;
 }
 
-peer_server_t &peer_server_t::at_client_pull(client_data_request_handler_t handler)
+peer_server_t &peer_server_t::on_client_pull(client_data_request_handler_t handler)
 {
     data_handler = handler;
     return *this;

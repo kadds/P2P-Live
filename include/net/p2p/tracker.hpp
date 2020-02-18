@@ -238,29 +238,27 @@ class tracker_server_t
     tracker_server_t(){};
     void bind(event_context_t &context, socket_addr_t addr, bool reuse_addr = false);
     void link_other_tracker_server(event_context_t &context, socket_addr_t addr, microsecond_t timeout);
-    tracker_server_t &at_link_error(error_handler_t handler);
+    tracker_server_t &on_link_error(error_handler_t handler);
     std::vector<tracker_node_t> get_trackers() const;
 };
-
-class tracker_node_client_t;
 
 /// client under NAT or not
 class tracker_node_client_t
 {
   private:
-    using at_nodes_update_handler_t = std::function<void(tracker_node_client_t &, peer_node_t *, u64)>;
-    using at_trackers_update_handler_t = std::function<void(tracker_node_client_t &, tracker_node_t *, u64)>;
-    using at_nodes_connect_handler_t = std::function<void(tracker_node_client_t &, peer_node_t *, u64)>;
-    using at_error_handler_t = std::function<void(tracker_node_client_t &, socket_t *, connection_state)>;
+    using nodes_update_handler_t = std::function<void(tracker_node_client_t &, peer_node_t *, u64)>;
+    using trackers_update_handler_t = std::function<void(tracker_node_client_t &, tracker_node_t *, u64)>;
+    using nodes_connect_handler_t = std::function<void(tracker_node_client_t &, peer_node_t *, u64)>;
+    using error_handler_t = std::function<void(tracker_node_client_t &, socket_t *, connection_state)>;
 
   private:
     tcp::client_t client;
     bool wait_next_package;
 
-    at_nodes_update_handler_t node_update_handler;
-    at_trackers_update_handler_t tracker_update_handler;
-    at_nodes_connect_handler_t connect_handler;
-    at_error_handler_t error_handler;
+    nodes_update_handler_t node_update_handler;
+    trackers_update_handler_t tracker_update_handler;
+    nodes_connect_handler_t connect_handler;
+    error_handler_t error_handler;
 
     void update_trackers(int count, request_strategy strategy);
     void update_nodes();
@@ -277,15 +275,15 @@ class tracker_node_client_t
     void connect_server(event_context_t &context, socket_addr_t addr, microsecond_t timeout);
 
     void request_update_trackers();
-    tracker_node_client_t &at_nodes_update(at_nodes_update_handler_t handler);
+    tracker_node_client_t &on_nodes_update(nodes_update_handler_t handler);
 
     void request_update_nodes();
-    tracker_node_client_t &at_trackers_update(at_trackers_update_handler_t handler);
+    tracker_node_client_t &on_trackers_update(trackers_update_handler_t handler);
 
     void connect_node(peer_node_t node);
-    tracker_node_client_t &at_node_connectable(at_nodes_connect_handler_t handler);
+    tracker_node_client_t &on_node_connectable(nodes_connect_handler_t handler);
 
-    tracker_node_client_t &at_error(at_error_handler_t handler);
+    tracker_node_client_t &on_error(error_handler_t handler);
 
     socket_t *get_socket() const { return client.get_socket(); }
 };

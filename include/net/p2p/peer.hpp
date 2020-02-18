@@ -100,16 +100,16 @@ struct peer_t
     bool operator!=(const peer_t &rt) const { return !operator==(rt); }
 };
 
-class peer_client_t;
-using peer_server_data_recv_t = std::function<void(peer_client_t &, peer_data_package_t &data, peer_t *)>;
-using peer_disconnect_t = std::function<void(peer_client_t &, peer_t *)>;
-using peer_connect_ok_t = std::function<void(peer_client_t &, peer_t *)>;
-
 /// just request peer server and recv data
 /// connect to tracker and get peer nodes, a short connection. connect to tracker when need get get nodes.
 /// add to peer_client
 class peer_client_t
 {
+  public:
+    using peer_server_data_recv_t = std::function<void(peer_client_t &, peer_data_package_t &data, peer_t *)>;
+    using peer_disconnect_t = std::function<void(peer_client_t &, peer_t *)>;
+    using peer_connect_ok_t = std::function<void(peer_client_t &, peer_t *)>;
+
   private:
     session_id_t sid;
     std::vector<std::unique_ptr<peer_t>> peers;
@@ -127,9 +127,9 @@ class peer_client_t
     peer_t *add_peer(event_context_t &context);
     void connect_to_peer(peer_t *peer, socket_addr_t server_addr);
 
-    peer_client_t &at_peer_data_recv(peer_server_data_recv_t handler);
-    peer_client_t &at_peer_disconnect(peer_disconnect_t handler);
-    peer_client_t &at_peer_connect(peer_connect_ok_t handler);
+    peer_client_t &on_peer_data_recv(peer_server_data_recv_t handler);
+    peer_client_t &on_peer_disconnect(peer_disconnect_t handler);
+    peer_client_t &on_peer_connect(peer_connect_ok_t handler);
 
     void pull_data_from_peer(u64 data_id);
 };
@@ -150,9 +150,6 @@ struct speer_t
     bool operator!=(const speer_t &rt) const { return rt.remote_address != remote_address; }
 };
 
-using client_join_handler_t = std::function<void(peer_server_t &, speer_t *)>;
-using client_data_request_handler_t = std::function<void(peer_server_t &, peer_data_request_t &, speer_t *)>;
-
 struct hash_func_t
 {
     u64 operator()(const socket_addr_t &addr) const { return addr.hash(); }
@@ -162,6 +159,10 @@ struct hash_func_t
 
 class peer_server_t
 {
+  public:
+    using client_join_handler_t = std::function<void(peer_server_t &, speer_t *)>;
+    using client_data_request_handler_t = std::function<void(peer_server_t &, peer_data_request_t &, speer_t *)>;
+
   private:
     client_join_handler_t client_handler;
     client_data_request_handler_t data_handler;
@@ -175,8 +176,8 @@ class peer_server_t
 
     speer_t *add_peer(event_context_t &context, socket_addr_t peer_addr);
 
-    peer_server_t &at_client_join(client_join_handler_t handler);
-    peer_server_t &at_client_pull(client_data_request_handler_t handler);
+    peer_server_t &on_client_join(client_join_handler_t handler);
+    peer_server_t &on_client_pull(client_data_request_handler_t handler);
 
     void send_package_to_peer(speer_t *peer, u64 data_id, socket_buffer_t buffer);
 };

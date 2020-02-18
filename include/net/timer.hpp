@@ -10,15 +10,15 @@
 namespace net
 {
 using microsecond_t = u64;
-using callback_t = std::function<void()>;
-// 10ms
-inline constexpr microsecond_t timer_min_precision = 10000;
+using timer_callback_t = std::function<void()>;
+// 1ms
+inline constexpr microsecond_t timer_min_precision = 1000;
 using timer_id = int64_t;
 
 struct timer_t
 {
     microsecond_t timepoint;
-    callback_t callback;
+    timer_callback_t callback;
     timer_t(microsecond_t timepoint, std::function<void()> callback)
         : timepoint(timepoint)
         , callback(callback)
@@ -29,7 +29,7 @@ struct timer_t
 struct timer_slot_t
 {
     microsecond_t timepoint;
-    std::vector<std::pair<callback_t, bool>> callbacks;
+    std::vector<std::pair<timer_callback_t, bool>> callbacks;
     timer_slot_t(microsecond_t tp)
         : timepoint(tp)
     {
@@ -38,7 +38,7 @@ struct timer_slot_t
 
 using map_t = std::unordered_map<microsecond_t, timer_slot_t *>;
 
-timer_t make_timer(microsecond_t span, callback_t callback);
+timer_t make_timer(microsecond_t span, timer_callback_t callback);
 
 struct timer_cmp
 {

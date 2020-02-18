@@ -22,7 +22,7 @@ io_result do_ping_pong(tcp::connection_t conn, u32 ip, u16 port, u32 workload, u
     socket_buffer_t buffer(sizeof(pong));
     buffer.expect().origin_length();
     assert(endian::save_to(pong, buffer));
-    return co::await(tcp::connection_awrite_package, conn, head, buffer);
+    return co::await(tcp::conn_awrite_packet, conn, head, buffer);
 }
 
 void tracker_server_t::update_tracker(socket_addr_t addr, tcp::connection_t conn, tracker_ping_pong_t &res)
@@ -49,7 +49,7 @@ void tracker_server_t::server_main(tcp::connection_t conn)
     tcp::package_head_t head;
     while (1)
     {
-        if (co::await(tcp::connection_aread_package_head, conn, head) != io_result::ok)
+        if (co::await(tcp::conn_aread_packet_head, conn, head) != io_result::ok)
             return;
         if (head.version != 4)
             return;
@@ -61,7 +61,7 @@ void tracker_server_t::server_main(tcp::connection_t conn)
                 return;
             socket_buffer_t buffer(len);
             buffer.expect().origin_length();
-            if (co::await(tcp::connection_aread_package_content, conn, buffer) != io_result::ok)
+            if (co::await(tcp::conn_aread_packet_content, conn, buffer) != io_result::ok)
                 return;
             tracker_ping_pong_t ping;
             assert(endian::cast_to(buffer, ping));
@@ -86,7 +86,7 @@ void tracker_server_t::server_main(tcp::connection_t conn)
 
             socket_buffer_t buffer(len);
             buffer.expect().origin_length();
-            if (co::await(tcp::connection_aread_package_content, conn, buffer) != io_result::ok)
+            if (co::await(tcp::conn_aread_packet_content, conn, buffer) != io_result::ok)
                 return;
             assert(endian::cast_to(buffer, request));
             request.max_count = std::min((int)request.max_count, 500);
@@ -133,7 +133,7 @@ void tracker_server_t::server_main(tcp::connection_t conn)
                 assert(endian::cast_inplace(*respond, send_buffer));
                 send_buffer.expect().length(sizeof(get_nodes_respond_t) + i * sizeof(peer_node_t));
 
-                co::await(tcp::connection_awrite_package, conn, head, send_buffer);
+                co::await(tcp::conn_awrite_packet, conn, head, send_buffer);
             }
             else if (request.strategy == request_strategy::min_workload)
             {
@@ -153,7 +153,7 @@ void tracker_server_t::server_main(tcp::connection_t conn)
 
             socket_buffer_t buffer((byte *)&request, len);
             buffer.expect().origin_length();
-            if (co::await(tcp::connection_aread_package_content, conn, buffer) != io_result::ok)
+            if (co::await(tcp::conn_aread_packet_content, conn, buffer) != io_result::ok)
                 return;
 
             assert(endian::cast_inplace(request, buffer));
@@ -194,7 +194,7 @@ void tracker_server_t::server_main(tcp::connection_t conn)
             assert(endian::cast_inplace(*respond, send_buffer));
             send_buffer.expect().length(sizeof(get_trackers_respond_t) + i * sizeof(tracker_node_t));
             // send
-            co::await(tcp::connection_awrite_package, conn, head, send_buffer);
+            co::await(tcp::conn_awrite_packet, conn, head, send_buffer);
         }
         else if (head.v4.msg_type == tracker_packet::heartbeat)
         {
@@ -231,7 +231,7 @@ void tracker_server_t::client_main(tcp::connection_t conn)
                  nodes.size(), trackers.size(), 1);
 
     tcp::package_head_t head;
-    if (co::await(tcp::connection_aread_package_head, conn, head) != io_result::ok)
+    if (co::await(tcp::conn_aread_packet_head, conn, head) != io_result::ok)
         return;
     if (head.version != 4)
         return;
@@ -243,7 +243,7 @@ void tracker_server_t::client_main(tcp::connection_t conn)
 
         socket_buffer_t buffer(len);
         buffer.expect().origin_length();
-        if (co::await(tcp::connection_aread_package_content, conn, buffer) != io_result::ok)
+        if (co::await(tcp::conn_aread_packet_content, conn, buffer) != io_result::ok)
             return;
 
         tracker_ping_pong_t pong;
@@ -258,8 +258,8 @@ void tracker_server_t::client_main(tcp::connection_t conn)
 
 void tracker_server_t::bind(event_context_t &context, socket_addr_t addr, bool reuse_addr)
 {
-    server.at_client_join(std::bind(&tracker_server_t::server_main, this, std::placeholders::_2));
-    server.at_client_connection_error([this](tcp::server_t &, socket_t *so, connection_state state) {
+    server.on_client_join(std::bind(&tracker_server_t::server_main, this, std::placeholders::_2));
+    server.on_client_error([this](tcp::server_t &, socket_t *so, connection_state state) {
         if (error_handler)
             error_handler(*this, so, state);
     });
@@ -277,8 +277,8 @@ void tracker_server_t::link_other_tracker_server(event_context_t &context, socke
         p.is_client = true;
         p.node.ip = addr.v4_addr();
         p.node.port = addr.get_port();
-        p.client.at_server_connect(std::bind(&tracker_server_t::client_main, this, std::placeholders::_2));
-        p.client.at_server_connection_error([addr, this](tcp::client_t &, socket_t *so, connection_state state) {
+        p.client.on_server_connect(std::bind(&tracker_server_t::client_main, this, std::placeholders::_2));
+        p.client.on_server_error([addr, this](tcp::client_t &, socket_t *so, connection_state state) {
             auto it = trackers.find(addr);
             if (it != trackers.end())
                 it->second->closed = true;
@@ -288,7 +288,7 @@ void tracker_server_t::link_other_tracker_server(event_context_t &context, socke
     }
 }
 
-tracker_server_t &tracker_server_t::at_link_error(error_handler_t handler)
+tracker_server_t &tracker_server_t::on_link_error(error_handler_t handler)
 {
     error_handler = handler;
     return *this;
@@ -317,7 +317,7 @@ void heartbeat(tcp::connection_t conn)
     int buf;
     socket_buffer_t buffer((byte *)&buf, 0);
     buffer.expect().length(0);
-    co::await(tcp::connection_awrite_package, conn, head, buffer);
+    co::await(tcp::conn_awrite_packet, conn, head, buffer);
 }
 
 void tracker_node_client_t::main(tcp::connection_t conn)
@@ -338,7 +338,7 @@ void tracker_node_client_t::main(tcp::connection_t conn)
         }
         tcp::package_head_t head;
         wait_next_package = true;
-        auto ret = co::await_timeout(node_tick_timespan, tcp::connection_aread_package_head, conn, head);
+        auto ret = co::await_timeout(node_tick_timespan, tcp::conn_aread_packet_head, conn, head);
         wait_next_package = false;
         if (ret == io_result::timeout)
         {
@@ -355,7 +355,7 @@ void tracker_node_client_t::main(tcp::connection_t conn)
             // buffer in stack
             socket_buffer_t recv_buffer((byte *)&respond, sizeof(respond));
             recv_buffer.expect().origin_length();
-            co::await(tcp::connection_aread_package_content, conn, recv_buffer);
+            co::await(tcp::conn_aread_packet_content, conn, recv_buffer);
             assert(endian::cast_inplace(respond, recv_buffer));
             if (respond.return_count > 1000)
                 return;
@@ -363,7 +363,7 @@ void tracker_node_client_t::main(tcp::connection_t conn)
             std::unique_ptr<char[]> data = std::make_unique<char[]>(respond.return_count * sizeof(peer_node_t));
             socket_buffer_t recv_data_buffer((byte *)data.get(), respond.return_count * sizeof(peer_node_t));
             recv_data_buffer.expect().origin_length();
-            co::await(tcp::connection_aread_package_content, conn, recv_data_buffer);
+            co::await(tcp::conn_aread_packet_content, conn, recv_data_buffer);
             peer_node_t *node = (peer_node_t *)data.get();
             for (auto i = 0; i < respond.return_count; i++)
             {
@@ -381,7 +381,7 @@ void tracker_node_client_t::main(tcp::connection_t conn)
             // buffer in stack
             socket_buffer_t recv_buffer((byte *)&respond, sizeof(respond));
             recv_buffer.expect().origin_length();
-            co::await(tcp::connection_aread_package_content, conn, recv_buffer);
+            co::await(tcp::conn_aread_packet_content, conn, recv_buffer);
             assert(endian::cast_inplace(respond, recv_buffer));
             if (respond.return_count > 1000)
                 return;
@@ -389,7 +389,7 @@ void tracker_node_client_t::main(tcp::connection_t conn)
             std::unique_ptr<char[]> data = std::make_unique<char[]>(respond.return_count * sizeof(tracker_node_t));
             socket_buffer_t recv_data_buffer((byte *)data.get(), respond.return_count * sizeof(tracker_node_t));
             recv_data_buffer.expect().origin_length();
-            co::await(tcp::connection_aread_package_content, conn, recv_data_buffer);
+            co::await(tcp::conn_aread_packet_content, conn, recv_data_buffer);
             tracker_node_t *node = (tracker_node_t *)data.get();
             for (auto i = 0; i < respond.return_count; i++)
             {
@@ -415,8 +415,8 @@ void tracker_node_client_t::config(u64 sid, int max_request_count, request_strat
 void tracker_node_client_t::connect_server(event_context_t &context, socket_addr_t addr, microsecond_t timeout)
 {
     wait_next_package = false;
-    client.at_server_connect(std::bind(&tracker_node_client_t::main, this, std::placeholders::_2))
-        .at_server_connection_error([this](tcp::client_t &, socket_t *so, connection_state state) {
+    client.on_server_connect(std::bind(&tracker_node_client_t::main, this, std::placeholders::_2))
+        .on_server_error([this](tcp::client_t &, socket_t *so, connection_state state) {
             if (error_handler)
                 error_handler(*this, so, state);
         });
@@ -437,7 +437,7 @@ void tracker_node_client_t::update_nodes()
     buffer.expect().origin_length();
     assert(endian::save_to(request, buffer));
     tcp::connection_t conn = client.get_connection();
-    co::await(tcp::connection_awrite_package, conn, head, buffer);
+    co::await(tcp::conn_awrite_packet, conn, head, buffer);
 }
 
 void tracker_node_client_t::update_trackers(int count, request_strategy strategy)
@@ -452,7 +452,7 @@ void tracker_node_client_t::update_trackers(int count, request_strategy strategy
     buffer.expect().origin_length();
     assert(endian::save_to(request, buffer));
     tcp::connection_t conn = client.get_connection();
-    co::await(tcp::connection_awrite_package, conn, head, buffer);
+    co::await(tcp::conn_awrite_packet, conn, head, buffer);
 }
 
 void tracker_node_client_t::request_update_trackers()
@@ -483,19 +483,19 @@ void tracker_node_client_t::request_update_nodes()
     request_nodes = true;
 }
 
-tracker_node_client_t &tracker_node_client_t::at_nodes_update(at_nodes_update_handler_t handler)
+tracker_node_client_t &tracker_node_client_t::on_nodes_update(nodes_update_handler_t handler)
 {
     node_update_handler = handler;
     return *this;
 }
 
-tracker_node_client_t &tracker_node_client_t::at_trackers_update(at_trackers_update_handler_t handler)
+tracker_node_client_t &tracker_node_client_t::on_trackers_update(trackers_update_handler_t handler)
 {
     tracker_update_handler = handler;
     return *this;
 }
 
-tracker_node_client_t &tracker_node_client_t::at_error(at_error_handler_t handler)
+tracker_node_client_t &tracker_node_client_t::on_error(error_handler_t handler)
 {
     error_handler = handler;
     return *this;

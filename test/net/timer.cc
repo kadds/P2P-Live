@@ -110,24 +110,24 @@ TEST(TimerTest, SocketTimer)
     // 500ms
     microsecond_t span = 500000, point = 0;
 
-    server.at_client_join([span, &point](tcp::server_t &s, tcp::connection_t conn) {
+    server.on_client_join([span, &point](tcp::server_t &s, tcp::connection_t conn) {
         point = get_current_time();
         conn.get_socket()->sleep(span);
         socket_buffer_t buffer("hi");
         buffer.expect().origin_length();
-        GTEST_ASSERT_EQ(co::await(tcp::connection_awrite, conn, buffer), io_result::ok);
+        GTEST_ASSERT_EQ(co::await(tcp::conn_awrite, conn, buffer), io_result::ok);
     });
 
     server.listen(ctx, test_addr, 1, true);
 
     tcp::client_t client;
     client
-        .at_server_connect([](tcp::client_t &c, tcp::connection_t conn) {
+        .on_server_connect([](tcp::client_t &c, tcp::connection_t conn) {
             socket_buffer_t buffer(2);
             buffer.expect().origin_length();
-            GTEST_ASSERT_EQ(co::await(tcp::connection_aread, conn, buffer), io_result::ok);
+            GTEST_ASSERT_EQ(co::await(tcp::conn_aread, conn, buffer), io_result::ok);
         })
-        .at_server_disconnect([&loop](tcp::client_t &c, tcp::connection_t conn) { loop.exit(0); });
+        .on_server_disconnect([&loop](tcp::client_t &c, tcp::connection_t conn) { loop.exit(0); });
 
     client.connect(ctx, test_addr, 1000);
 

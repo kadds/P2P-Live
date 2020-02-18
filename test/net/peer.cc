@@ -17,16 +17,16 @@ TEST(PeerTest, PeerConnection)
 
     int ok = 0;
 
-    server.at_client_join([&ok](peer_server_t &server, speer_t *speer) { ok++; });
+    server.on_client_join([&ok](peer_server_t &server, speer_t *speer) { ok++; });
 
     peer_client_t client(1);
 
-    client.at_peer_disconnect([](peer_client_t &client, peer_t *peer) {
+    client.on_peer_disconnect([](peer_client_t &client, peer_t *peer) {
         std::string str = "peer client connect error";
         GTEST_ASSERT_EQ("", str);
     });
 
-    client.at_peer_connect([&ok, &loop](peer_client_t &client, peer_t *peer) {
+    client.on_peer_connect([&ok, &loop](peer_client_t &client, peer_t *peer) {
         ok++;
         loop.exit(0);
     });
@@ -50,7 +50,7 @@ TEST(PeerTest, DataTransport)
 
     peer_server_t server;
 
-    server.at_client_pull([](peer_server_t &server, peer_data_request_t &request, speer_t *peer) {
+    server.on_client_pull([](peer_server_t &server, peer_data_request_t &request, speer_t *peer) {
         if (request.data_id == 1)
         {
             socket_buffer_t buffer(2);
@@ -64,15 +64,15 @@ TEST(PeerTest, DataTransport)
 
     peer_client_t client(1);
 
-    client.at_peer_disconnect([](peer_client_t &client, peer_t *peer) {
+    client.on_peer_disconnect([](peer_client_t &client, peer_t *peer) {
         std::string str = "peer client connect error";
         GTEST_ASSERT_EQ("", str);
     });
 
-    client.at_peer_connect([](peer_client_t &client, peer_t *peer) { client.pull_data_from_peer(1); });
+    client.on_peer_connect([](peer_client_t &client, peer_t *peer) { client.pull_data_from_peer(1); });
 
     bool data_recved = false;
-    client.at_peer_data_recv([&loop, &data_recved](peer_client_t &client, peer_data_package_t &data, peer_t *peer) {
+    client.on_peer_data_recv([&loop, &data_recved](peer_client_t &client, peer_data_package_t &data, peer_t *peer) {
         GTEST_ASSERT_EQ(data.size, 2);
         GTEST_ASSERT_EQ(data.data[0], 0xFE);
         GTEST_ASSERT_EQ(data.data[1], 0xA0);
@@ -155,10 +155,10 @@ TEST(PeerTest, TrackerNode)
     {
         tclients[i].config(1, 30, p2p::request_strategy::random);
         tclients[i].connect_server(context, taddrs1, make_timespan_full());
-        tclients[i].at_nodes_update([](tracker_node_client_t &client, peer_node_t *nodes, u64 count) {
+        tclients[i].on_nodes_update([](tracker_node_client_t &client, peer_node_t *nodes, u64 count) {
             GTEST_ASSERT_EQ(count, test_count - 1);
         });
-        tclients[i].at_trackers_update([taddrs2](tracker_node_client_t &, tracker_node_t *nodes, u64 count) {
+        tclients[i].on_trackers_update([taddrs2](tracker_node_client_t &, tracker_node_t *nodes, u64 count) {
             /// always get tserver2 address
             GTEST_ASSERT_EQ(count, 1);
             GTEST_ASSERT_EQ(nodes[0].port, taddrs2.get_port());
