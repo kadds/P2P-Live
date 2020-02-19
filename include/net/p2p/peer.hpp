@@ -10,6 +10,35 @@
 #include <unordered_set>
 #include <vector>
 
+/**
+ * 如果AB都是公网用户
+ *      直接连接 (多出现在边缘服务节点传输数据，延迟最低)
+ *
+ * 如果公网用户A 和NAT锥形用户B
+ * 如果 B->A (多出现在1级分发时，客户端从边缘服务节点拉取数据)
+ *      B主动连接A端口
+ * 如果A->B （反向连接）（少见）
+ *      A->tracker->B->A
+ *      A连接到tracker发送请求
+ *      tracker 把request消息转发给B
+ *      B直接连接上A的外网IP和端口
+ *
+ * 锥形用户A to 锥形用户B
+ * A->B
+ *      A->tracker->B->tracker->A | A<=>B
+ *      A通过 udp 连接到 tracker，同时在NAT上留下一个洞
+ *      Tracker把A 的 request消息转发给B， 其中包含A打通的NAT端口
+ *      B得知A的公网地址，尝试连接A （如果为A全锥形型NAT，成功）
+ *      B通过udp连接tracker，同时在NAT上留下一个洞
+ *      Tracker把B的NAT打通的端口发送到A
+ *      A和B相互同时连接，最少两次发包成功
+ *
+ * 对称型A to 锥形用户B
+ *      X
+ * 对称A to 对称B
+ *      X
+ *
+ */
 /// forward
 namespace net
 {
@@ -20,6 +49,8 @@ namespace net::p2p
 {
 using fragment_id_t = u64;
 using session_id_t = u32;
+using channel_t = u8;
+
 namespace peer_msg_type
 {
 enum : u8
@@ -28,6 +59,7 @@ enum : u8
     init_respond,
     fragment_request,
     fragment_respond,
+    fragment_respond_rest,
 
     meta_respond = 9,
 
@@ -86,10 +118,10 @@ struct peer_fragment_respond_t
     fragment_id_t fid;
     u32 frame_size;
     u8 data[0];
-    using member_list_t = serialization::typelist_t<u8, u16, fragment_id_t, u32>;
+    using member_list_t = serialization::typelist_t<u8, fragment_id_t, u32>;
 };
 
-struct peer_fragment_respond_rest_t
+struct peer_fragment_rest_respond_t
 {
     u8 type;
     u8 data[0];
@@ -108,16 +140,21 @@ struct peer_meta_respond_t
 
 /// peer tp peer
 
-struct peer_info_t
+struct channel_info_t
 {
-    std::queue<std::pair<std::vector<fragment_id_t>, u8>> frag_request_queue;
+    std::queue<std::tuple<std::vector<fragment_id_t>, u8>> frag_request_queue;
     std::queue<u64> meta_request_queue;
+
     std::queue<std::tuple<fragment_id_t, socket_buffer_t>> fragment_send_queue;
     std::queue<std::tuple<u64, socket_buffer_t>> meta_send_queue;
 
-    std::unordered_map<fragment_id_t, socket_buffer_t> send_buffers;
+    fragment_id_t fragment_recv_id;
+    socket_buffer_t fragment_recv_buffer_cache;
+};
 
-    std::unordered_map<fragment_id_t, socket_buffer_t> recv_buffers;
+struct peer_info_t
+{
+    std::unordered_map<channel_t, channel_info_t> queues;
 
     socket_addr_t remote_address;
     microsecond_t last_ping;
@@ -159,15 +196,24 @@ class peer_t
     pull_request_t fragment_handler;
     pull_request_t meta_handler;
     void main();
+    void heartbeat(socket_addr_t address);
+
+    timer_registered_t timer;
 
     std::queue<peer_info_t *> sendable_peers;
 
-    void update_fragments(std::vector<fragment_id_t> ids, u8 priority, peer_info_t *target);
-    void update_metainfo(u64 key, peer_info_t *target);
+    u64 heartbeat_tick = 30000000;
+    u64 disconnect_tick = 120000000;
+    std::vector<channel_t> channels;
+
+    void update_fragments(std::vector<fragment_id_t> ids, u8 priority, channel_t channel, peer_info_t *target);
+    void update_metainfo(u64 key, channel_t channel, peer_info_t *target);
+    void send_metainfo(u64 key, channel_t channel, socket_buffer_t buffer, peer_info_t *target);
+    void send_fragments(fragment_id_t id, channel_t channel, socket_buffer_t buffer, peer_info_t *target);
 
     void send_init(peer_info_t *target);
-    void send_fragments(fragment_id_t id, socket_buffer_t buffer, peer_info_t *target);
     void do_write();
+    void async_do_write();
 
     peer_info_t *find_peer(socket_addr_t addr);
 
@@ -179,6 +225,8 @@ class peer_t
 
     void bind(event_context_t &context);
     void bind(event_context_t &context, socket_addr_t addr_to_bind, bool reuse_addr = false);
+
+    void accept_channels(const std::vector<channel_t> &channels);
 
     peer_info_t *add_peer();
     void connect_to_peer(peer_info_t *peer, socket_addr_t server_addr);
@@ -192,13 +240,15 @@ class peer_t
     peer_t &on_fragment_pull_request(pull_request_t handler);
     peer_t &on_meta_pull_request(pull_request_t handler);
 
-    void pull_fragment_from_peer(peer_info_t *peer, std::vector<fragment_id_t> fid, u8 priority);
-    void pull_meta_data(peer_info_t *peer, u64 key);
+    void pull_fragment_from_peer(peer_info_t *peer, std::vector<fragment_id_t> fid, channel_t channel, u8 priority);
+    void pull_meta_data(peer_info_t *peer, u64 key, channel_t channel);
 
-    void send_fragment_to_peer(peer_info_t *peer, fragment_id_t fid, socket_buffer_t buffer);
-    void send_meta_data_to_peer(peer_info_t *peer, u64 key, socket_buffer_t buffer);
+    void send_fragment_to_peer(peer_info_t *peer, fragment_id_t fid, channel_t channel, socket_buffer_t buffer);
+    void send_meta_data_to_peer(peer_info_t *peer, u64 key, channel_t channel, socket_buffer_t buffer);
 
     socket_t *get_socket() const { return udp.get_socket(); }
+
+    rudp_t &get_udp() { return udp; }
 };
 
 } // namespace net::p2p

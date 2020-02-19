@@ -5,113 +5,158 @@ namespace net
 {
 except_buffer_helper_t except_buffer_helper_t::length(u64 len)
 {
-    buf->data_len = len;
-    buf->current_process = 0;
+    buf->valid_data_length = len;
+    buf->walk_offset = 0;
     return *this;
 }
 
 except_buffer_helper_t except_buffer_helper_t::origin_length()
 {
-    buf->data_len = buf->buffer_len;
-    buf->current_process = 0;
+    buf->valid_data_length = buf->buffer_size;
+    buf->walk_offset = 0;
     return *this;
+}
+
+socket_buffer_t::socket_buffer_t()
+    : ptr(nullptr)
+    , header(nullptr)
+    , buffer_size(0)
+    , valid_data_length(0)
+    , walk_offset(0)
+{
 }
 
 socket_buffer_t::socket_buffer_t(std::string str)
     : ptr(new byte[str.size()])
-    , buffer_len(str.size())
-    , data_len(0)
-    , current_process(0)
+    , header(new socket_buffer_header_t())
+    , buffer_size(str.size())
+    , valid_data_length(0)
     , walk_offset(0)
-    , own_ptr(true)
 {
     memcpy(ptr, str.c_str(), str.size());
+    header->ref_count = 1;
 }
 
 socket_buffer_t::socket_buffer_t(u64 len)
     : ptr(new byte[len])
-    , buffer_len(len)
-    , data_len(0)
-    , current_process(0)
+    , header(new socket_buffer_header_t())
+    , buffer_size(len)
+    , valid_data_length(0)
     , walk_offset(0)
-    , own_ptr(true)
 {
+    header->ref_count = 1;
 }
 
 socket_buffer_t::socket_buffer_t(byte *buffer_ptr, u64 buffer_length)
     : ptr(buffer_ptr)
-    , buffer_len(buffer_length)
-    , data_len(0)
-    , current_process(0)
+    , header(nullptr)
+    , buffer_size(buffer_length)
+    , valid_data_length(0)
     , walk_offset(0)
-    , own_ptr(false)
 {
+}
+
+socket_buffer_t::socket_buffer_t(const socket_buffer_t &rh)
+{
+    this->ptr = rh.ptr;
+    this->valid_data_length = rh.valid_data_length;
+    this->buffer_size = rh.buffer_size;
+    this->walk_offset = rh.walk_offset;
+    this->header = rh.header;
+    if (this->header)
+        this->header->ref_count++;
+}
+
+socket_buffer_t &socket_buffer_t::operator=(const socket_buffer_t &rh)
+{
+    if (&rh == this)
+        return *this;
+
+    this->ptr = rh.ptr;
+    this->valid_data_length = rh.valid_data_length;
+    this->buffer_size = rh.buffer_size;
+    this->walk_offset = rh.walk_offset;
+    this->header = rh.header;
+    if (this->header)
+        this->header->ref_count++;
+    return *this;
 }
 
 socket_buffer_t::socket_buffer_t(socket_buffer_t &&buffer)
 {
     this->ptr = buffer.ptr;
-    this->current_process = buffer.current_process;
-    this->data_len = buffer.data_len;
-    this->buffer_len = buffer.buffer_len;
+    this->valid_data_length = buffer.valid_data_length;
+    this->buffer_size = buffer.buffer_size;
     this->walk_offset = buffer.walk_offset;
-    this->own_ptr = buffer.own_ptr;
+    this->header = buffer.header;
 
     buffer.ptr = nullptr;
-    buffer.current_process = 0;
-    buffer.data_len = 0;
-    buffer.buffer_len = 0;
+    buffer.header = nullptr;
+    buffer.valid_data_length = 0;
+    buffer.buffer_size = 0;
     buffer.walk_offset = 0;
-    buffer.own_ptr = false;
 }
 
-socket_buffer_t &socket_buffer_t::operator()(socket_buffer_t &&buf)
+socket_buffer_t &socket_buffer_t::operator()(socket_buffer_t &&buffer)
 {
     if (this->ptr)
         delete[] ptr;
 
-    this->ptr = buf.ptr;
-    this->current_process = buf.current_process;
-    this->data_len = buf.data_len;
-    this->buffer_len = buf.buffer_len;
-    this->walk_offset = buf.walk_offset;
-    this->own_ptr = buf.own_ptr;
+    this->ptr = buffer.ptr;
+    this->valid_data_length = buffer.valid_data_length;
+    this->buffer_size = buffer.buffer_size;
+    this->walk_offset = buffer.walk_offset;
+    this->header = buffer.header;
 
-    buf.ptr = nullptr;
-    buf.current_process = 0;
-    buf.data_len = 0;
-    buf.buffer_len = 0;
-    buf.walk_offset = 0;
-    buf.own_ptr = false;
+    buffer.ptr = nullptr;
+    buffer.header = nullptr;
+    buffer.valid_data_length = 0;
+    buffer.buffer_size = 0;
+    buffer.walk_offset = 0;
 
     return *this;
 }
 
 socket_buffer_t::~socket_buffer_t()
 {
-    if (ptr && own_ptr)
+    if (ptr && header && --header->ref_count == 0)
+    {
         delete[] ptr;
+        delete header;
+    }
 }
 
 long socket_buffer_t::write_string(const std::string &str)
 {
-    long len = str.size();
-    if (len > buffer_len)
-        len = buffer_len;
+    auto len = str.size();
+    if (len > get_length())
+        len = get_length();
 
-    memcpy(ptr, str.c_str(), len);
+    memcpy(get(), str.c_str(), len);
+
     return len;
 }
 
 std::string socket_buffer_t::to_string() const
 {
     std::string str;
-    str.resize(data_len);
-    for (long i = 0; i < data_len; i++)
+    str.resize(get_length());
+    byte *start_ptr = get();
+    for (long i = 0; i < str.size(); i++)
     {
-        str[i] = *((char *)ptr + i);
+        str[i] = *((char *)start_ptr + i);
     }
     return str;
+}
+
+void socket_buffer_t::clear()
+{
+    if (ptr)
+    {
+        auto start_ptr = get();
+        auto size = get_length();
+        memset(start_ptr, 0, size);
+    }
 }
 
 } // namespace net

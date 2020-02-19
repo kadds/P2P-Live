@@ -23,14 +23,14 @@ void front_server_t::bind(event_context_t &context, socket_addr_t addr, bool reu
         socket_buffer_t buffer(sizeof(request));
         buffer.expect().origin_length();
         co::await(tcp::conn_aread, conn, buffer);
-        assert(endian::cast_to<>(buffer, request));
+        endian::cast_to<>(buffer, request);
         if (handler)
         {
             if (handler(*this, request, respond, conn))
             {
                 socket_buffer_t respond_buffer(sizeof(respond));
                 respond_buffer.expect().origin_length();
-                assert(endian::save_to<>(respond, respond_buffer));
+                endian::save_to<>(respond, respond_buffer);
                 co::await(tcp::conn_awrite, conn, respond_buffer);
             }
         }

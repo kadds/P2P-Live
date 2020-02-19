@@ -49,6 +49,10 @@ constexpr int stack_size = 1 << 16;
 ctx::fiber &&co_wrapper(ctx::fiber &&sink, coroutine_t *co);
 ctx::fiber &&co_reschedule_wrapper(ctx::fiber &&sink, coroutine_t *co, std::function<void()> func);
 
+class coroutine_stop_exception
+{
+};
+
 /// coroutine
 class coroutine_t
 {
@@ -59,12 +63,14 @@ class coroutine_t
     coroutine_t *prev;
     friend ctx::fiber &&co_wrapper(ctx::fiber &&sink, coroutine_t *co);
     friend ctx::fiber &&co_reschedule_wrapper(ctx::fiber &&sink, coroutine_t *co, std::function<void()> func);
+    bool is_stop;
 
   public:
     coroutine_t(std::function<void()> f)
         : context(std::bind(co_wrapper, std::placeholders::_1, this))
         , func(f)
-        , prev(nullptr){};
+        , prev(nullptr)
+        , is_stop(false){};
 
     coroutine_t(const coroutine_t &) = delete;
     coroutine_t &operator=(const coroutine_t &) = delete;
@@ -107,7 +113,10 @@ class coroutine_t
         if (cur)
         {
             co_cur = cur->prev;
+            auto next = cur;
             cur->context = std::move(cur->context).resume();
+            if (next->is_stop)
+                remove(next);
             return;
         }
         else
@@ -122,8 +131,11 @@ class coroutine_t
         if (cur)
         {
             co_cur = cur->prev;
+            auto next = cur;
             cur->context =
                 std::move(cur->context).resume_with(std::bind(co_reschedule_wrapper, std::placeholders::_1, cur, func));
+            if (next->is_stop)
+                remove(next);
             return;
         }
         else

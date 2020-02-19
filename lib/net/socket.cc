@@ -15,25 +15,18 @@ socket_t::socket_t(int fd)
 {
 }
 
-socket_t::~socket_t()
-{
-    if (co)
-        co::coroutine_t::remove(co);
-    close(fd);
-}
+socket_t::~socket_t() { close(fd); }
 
 io_result socket_t::write_async(socket_buffer_t &buffer)
 {
-    unsigned long buffer_offset = buffer.get_process_length();
-    unsigned long buffer_size = buffer.get_data_length() - buffer.get_process_length();
-    byte *buf = buffer.get_raw_ptr();
-    while (buffer_size > 0)
+    while (buffer.get_length() > 0)
     {
-        auto len = send(fd, buf + buffer_offset, buffer_size, MSG_DONTWAIT);
+        unsigned long buffer_size = buffer.get_length();
+        byte *buf = buffer.get();
+        auto len = send(fd, buf, buffer_size, MSG_DONTWAIT);
 
         if (len == 0)
         {
-            buffer.set_process_length(buffer_offset);
             return io_result::cont;
         }
         else if (len < 0)
@@ -45,12 +38,11 @@ io_result socket_t::write_async(socket_buffer_t &buffer)
             }
             else if (errno == EPIPE)
             {
-                buffer.end_process();
+                buffer.finish_walk();
                 return io_result::closed; // EOF PIPE
             }
             else if (errno == EAGAIN)
             {
-                buffer.set_process_length(buffer_offset);
                 return io_result::cont;
             }
             else if (errno == ECONNREFUSED)
@@ -66,27 +58,23 @@ io_result socket_t::write_async(socket_buffer_t &buffer)
                 throw net_io_exception("send message failed!");
             }
         }
-
-        buffer_size -= len;
-        buffer_offset += len;
+        buffer.walk_step(len);
     }
-    buffer.set_process_length(buffer_offset);
-    buffer.end_process();
+    buffer.finish_walk();
     return io_result::ok;
 }
 
 io_result socket_t::read_async(socket_buffer_t &buffer)
 {
-    unsigned long buffer_offset = buffer.get_process_length();
-    unsigned long buffer_size = buffer.get_data_length() - buffer.get_process_length();
-    byte *buf = buffer.get_raw_ptr();
     ssize_t len;
-    while (buffer_size > 0)
+    while (buffer.get_length() > 0)
     {
-        len = recv(fd, buf + buffer_offset, buffer_size, MSG_DONTWAIT);
+        unsigned long buffer_size = buffer.get_length();
+        byte *buf = buffer.get();
+        len = recv(fd, buf, buffer_size, MSG_DONTWAIT);
         if (len == 0) // EOF
         {
-            buffer.end_process();
+            buffer.finish_walk();
             return io_result::closed;
         }
         else if (len < 0)
@@ -97,7 +85,6 @@ io_result socket_t::read_async(socket_buffer_t &buffer)
             }
             else if (errno == EAGAIN)
             {
-                buffer.set_process_length(buffer_offset);
                 // can't read any data
                 return io_result::cont;
             }
@@ -114,11 +101,9 @@ io_result socket_t::read_async(socket_buffer_t &buffer)
                 throw net_io_exception("recv message failed!");
             }
         }
-        buffer_size -= len;
-        buffer_offset += len;
+        buffer.walk_step(len);
     }
-    buffer.set_process_length(buffer_offset);
-    buffer.end_process();
+    buffer.finish_walk();
     return io_result::ok;
 }
 
@@ -184,10 +169,7 @@ co::async_result_t<io_result> socket_t::aread(co::paramter_t &param, socket_buff
 io_result socket_t::write_pack(socket_buffer_t &buffer, socket_addr_t target)
 {
     auto addr = target.get_raw_addr();
-    unsigned long buffer_offset = buffer.get_process_length();
-    unsigned long buffer_size = buffer.get_data_length() - buffer.get_process_length();
-    auto len = sendto(fd, buffer.get_raw_ptr(), buffer.get_data_length(), MSG_DONTWAIT, (sockaddr *)&addr,
-                      (socklen_t)sizeof(addr));
+    auto len = sendto(fd, buffer.get(), buffer.get_length(), MSG_DONTWAIT, (sockaddr *)&addr, (socklen_t)sizeof(addr));
     if (len == 0)
     {
         return io_result::closed;
@@ -208,8 +190,8 @@ io_result socket_t::write_pack(socket_buffer_t &buffer, socket_addr_t target)
         }
         return io_result::failed;
     }
-    buffer.set_process_length(len);
-    buffer.end_process();
+    buffer.walk_step(len);
+    buffer.finish_walk();
     return io_result::ok;
 }
 
@@ -217,7 +199,7 @@ io_result socket_t::read_pack(socket_buffer_t &buffer, socket_addr_t &target)
 {
     auto addr = target.get_raw_addr();
     socklen_t slen = sizeof(addr);
-    auto len = recvfrom(fd, buffer.get_raw_ptr(), buffer.get_data_length(), MSG_DONTWAIT, (sockaddr *)&addr, &slen);
+    auto len = recvfrom(fd, buffer.get(), buffer.get_length(), MSG_DONTWAIT, (sockaddr *)&addr, &slen);
     if (len == 0)
     {
         return io_result::closed;
@@ -238,8 +220,8 @@ io_result socket_t::read_pack(socket_buffer_t &buffer, socket_addr_t &target)
         }
         return io_result::failed;
     }
-    buffer.set_process_length(len);
-    buffer.end_process();
+    buffer.walk_step(len);
+    buffer.finish_walk();
     target = addr;
     return io_result::ok;
 }
@@ -321,8 +303,7 @@ void socket_t::on_event(event_context_t &context, event_type_t type)
     {
         co->resume();
     }
-
-    current_event = 0;
+    // may be destoried here
 }
 
 void socket_t::add_event(event_type_t type)

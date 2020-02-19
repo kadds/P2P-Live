@@ -77,10 +77,13 @@ enum
 {
     ping = 1,
     pong,
+    get_tracker_info_request,
+    get_tracker_info_respond,
     get_nodes_request,
     get_nodes_respond,
     get_trackers_request,
     get_trackers_respond,
+    peer_request,
     heartbeat = 0xFF,
 };
 }
@@ -114,7 +117,19 @@ struct tracker_node_t
     using member_list_t = serialization::typelist_t<u16, u32>;
 };
 
-/// type 3
+struct get_tracker_info_request_t
+{
+    using member_list_t = serialization::typelist_t<>;
+};
+
+struct get_tracker_info_respond_t
+{
+    u16 tudp_port;
+    u16 cport;
+    u32 cip;
+    using member_list_t = serialization::typelist_t<u16, u16, u32>;
+};
+
 struct get_nodes_request_t
 {
     u16 max_count;
@@ -123,7 +138,6 @@ struct get_nodes_request_t
     using member_list_t = serialization::typelist_t<u16, u64, u8>;
 };
 
-/// type 4
 struct get_nodes_respond_t
 {
     u16 return_count;
@@ -133,7 +147,6 @@ struct get_nodes_respond_t
     using member_list_t = serialization::typelist_t<u16, u32, u64>;
 };
 
-/// type 5
 struct get_trackers_request_t
 {
     u16 max_count;
@@ -141,7 +154,6 @@ struct get_trackers_request_t
     using member_list_t = serialization::typelist_t<u16, u8>;
 };
 
-/// type 6
 struct get_trackers_respond_t
 {
     u16 return_count;
@@ -150,20 +162,23 @@ struct get_trackers_respond_t
     using member_list_t = serialization::typelist_t<u16, u32>;
 };
 
-/// type 0xFF
 struct tracker_heartbeat_t
 {
     using member_list_t = serialization::typelist_t<>;
 };
-
-struct connection_request_t
+constexpr u64 conn_request_magic = 0xC0FF8888;
+struct udp_connection_request_t
 {
+    u32 magic;
+    u8 ttl;
     u16 target_port;
     u32 target_ip;
-    u16 local_port;
-    u32 local_ip;
+    u16 from_port;
+    u32 from_ip;
+    u16 from_udp_port;
     u64 sid;
-    using member_list_t = serialization::typelist_t<u16, u32, u16, u32, u64>;
+    u64 key;
+    using member_list_t = serialization::typelist_t<u32, u8, u16, u32, u16, u32, u16, u64>;
 };
 
 #pragma pack(pop)
@@ -196,10 +211,12 @@ struct node_info_t
     microsecond_t last_ping;
     u32 workload;
     peer_node_t node;
+    tcp::connection_t conn;
 
     node_info_t()
         : last_ping(0)
-        , workload(0){};
+        , workload(0)
+        , conn(nullptr){};
 };
 
 struct addr_hash_func
@@ -223,9 +240,11 @@ class tracker_server_t
 
     tcp::server_t server;
     rudp_t udp;
+    u16 udp_port;
 
     void server_main(tcp::connection_t conn);
     void client_main(tcp::connection_t conn);
+    void udp_main();
 
     /// save index of tracker_infos
     std::unordered_map<socket_addr_t, std::unique_ptr<tracker_info_t>, addr_hash_func> trackers;
@@ -249,11 +268,17 @@ class tracker_node_client_t
   private:
     using nodes_update_handler_t = std::function<void(tracker_node_client_t &, peer_node_t *, u64)>;
     using trackers_update_handler_t = std::function<void(tracker_node_client_t &, tracker_node_t *, u64)>;
-    using nodes_connect_handler_t = std::function<void(tracker_node_client_t &, peer_node_t *, u64)>;
+    using nodes_connect_handler_t = std::function<void(tracker_node_client_t &, peer_node_t, u16 udp_port)>;
     using error_handler_t = std::function<void(tracker_node_client_t &, socket_t *, connection_state)>;
 
   private:
     tcp::client_t client;
+
+    socket_addr_t server_udp_address;
+
+    u16 client_outer_port;
+    u32 client_outer_ip;
+
     bool wait_next_package;
 
     nodes_update_handler_t node_update_handler;
@@ -272,6 +297,7 @@ class tracker_node_client_t
 
   public:
     void config(u64 sid, int max_request_count, request_strategy strategy);
+    void config_as_server(u64 sid);
 
     void connect_server(event_context_t &context, socket_addr_t addr, microsecond_t timeout);
 
@@ -281,8 +307,8 @@ class tracker_node_client_t
     void request_update_nodes();
     tracker_node_client_t &on_trackers_update(trackers_update_handler_t handler);
 
-    void connect_node(peer_node_t node);
-    tracker_node_client_t &on_node_connectable(nodes_connect_handler_t handler);
+    void request_connect_node(peer_node_t node, rudp_t &udp);
+    tracker_node_client_t &on_node_request_connect(nodes_connect_handler_t handler);
 
     tracker_node_client_t &on_error(error_handler_t handler);
 

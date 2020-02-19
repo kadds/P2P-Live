@@ -16,11 +16,13 @@ struct rudp_endpoint_t
 {
     socket_addr_t remote_address;
     ikcpcb *ikcp;
+    int channel;
     rudp_impl_t *impl;
     microsecond_t last_alive;
     microsecond_t inactive_timeout;
     /// next timer
     timer_registered_t timer_reg;
+    bool can_write;
 };
 
 struct hash_so_t
@@ -30,7 +32,7 @@ struct hash_so_t
 
 class rudp_impl_t
 {
-    std::unordered_map<socket_addr_t, std::unique_ptr<rudp_endpoint_t>, hash_so_t> user_map;
+    std::unordered_map<socket_addr_t, std::unordered_map<int, std::unique_ptr<rudp_endpoint_t>>, hash_so_t> user_map;
 
     event_context_t *context;
     rudp_t::data_handler_t handler;
@@ -43,6 +45,10 @@ class rudp_impl_t
     /// set base time to aviod int overflow which used by kcp
     microsecond_t base_time;
     co::paramter_t co_param;
+    bool is_await_write;
+    bool is_await_read;
+    socket_buffer_t recv_buffer;
+    std::unordered_set<rudp_endpoint_t *> readable_endpoints;
 
     void set_timer(rudp_endpoint_t *ep)
     {
@@ -51,6 +57,7 @@ class rudp_impl_t
         auto time_point = next_tick_time * 1000 + base_time;
         if (time_point < cur)
             time_point = cur;
+
         if (ep->timer_reg.id >= 0 && ep->timer_reg.timepoint <= time_point + 5000 &&
             ep->timer_reg.timepoint >= time_point - 5000)
         {
@@ -65,9 +72,12 @@ class rudp_impl_t
 
         ep->timer_reg = socket->get_event_loop().add_timer(make_timer(time_point - cur, [this, ep]() {
             ikcp_update(ep->ikcp, (get_current_time() - base_time) / 1000);
-            if (!co_param.is_stop())
+            if (is_await_read || is_await_write)
             {
-                socket->get_coroutine()->resume();
+                if (ep->can_write)
+                {
+                    socket->get_coroutine()->resume();
+                }
             }
             set_timer(ep);
         }));
@@ -75,6 +85,7 @@ class rudp_impl_t
 
   public:
     rudp_impl_t()
+        : recv_buffer(1472)
     {
         socket = new_udp_socket();
         base_time = get_current_time();
@@ -106,86 +117,114 @@ class rudp_impl_t
 
     void run(std::function<void()> func) { socket->startup_coroutine(co::coroutine_t::create(func)); }
 
-    void add_connection(socket_addr_t addr, microsecond_t inactive_timeout)
+    rudp_endpoint_t *find(socket_addr_t addr, int channel)
     {
-        if (user_map.find(addr) != user_map.end())
+        auto it = user_map.find(addr);
+        if (it != user_map.end())
+        {
+            auto it2 = it->second.find(channel);
+            if (it2 != it->second.end())
+            {
+                return it2->second.get();
+            }
+        }
+        return nullptr;
+    }
+
+    void add_connection(socket_addr_t addr, int channel, microsecond_t inactive_timeout)
+    {
+        if (find(addr, channel) != nullptr)
             return;
+
         std::unique_ptr<rudp_endpoint_t> endpoint = std::make_unique<rudp_endpoint_t>();
-        auto pcb = ikcp_create(1, endpoint.get());
+        auto pcb = ikcp_create(channel, endpoint.get());
         endpoint->ikcp = pcb;
         endpoint->inactive_timeout = inactive_timeout;
         endpoint->remote_address = addr;
         endpoint->impl = this;
         endpoint->timer_reg.id = -1;
+        endpoint->can_write = true;
+        endpoint->channel = channel;
+
         ikcp_setoutput(pcb, udp_output);
         ikcp_wndsize(pcb, 128, 128);
         // fast mode
-        ikcp_nodelay(pcb, 1, 10, 2, 1);
-        pcb->rx_minrto = 10;
+        ikcp_nodelay(pcb, 1, 50, 2, 1);
+        pcb->rx_minrto = 50;
         pcb->fastresend = 1;
-        user_map.insert(std::make_pair(addr, std::move(endpoint)));
+        user_map[addr].emplace(channel, std::move(endpoint));
     }
 
-    bool removeable(socket_addr_t addr)
+    bool removeable(socket_addr_t addr, int channel)
     {
-        auto it = user_map.find(addr);
-        if (it == user_map.end())
+        auto endpoint = find(addr, channel);
+        if (endpoint == nullptr)
             return false;
-        return ikcp_waitsnd(it->second->ikcp) == 0;
+
+        return ikcp_waitsnd(endpoint->ikcp) == 0;
     }
 
-    void remove_connection(socket_addr_t addr)
+    void remove_connection(socket_addr_t addr, int channel)
     {
-        auto it = user_map.find(addr);
-        if (it == user_map.end())
+        auto endpoint = find(addr, channel);
+        if (endpoint == nullptr)
             return;
 
-        ikcp_update(it->second->ikcp, (get_current_time() - base_time) / 1000);
-        ikcp_release(it->second->ikcp);
+        ikcp_update(endpoint->ikcp, (get_current_time() - base_time) / 1000);
+        ikcp_release(endpoint->ikcp);
     }
 
-    co::async_result_t<io_result> awrite(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t address)
+    co::async_result_t<io_result> awrite(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t address,
+                                         int channel)
     {
-        assert(buffer.get_data_length() <= INT32_MAX);
-        auto endpoint_it = user_map.find(address);
-        if (endpoint_it == user_map.end())
+        assert(buffer.get_length() <= INT32_MAX);
+        if (param.is_stop())
+        {
+            co_param = {};
+            is_await_write = false;
+            return io_result::timeout;
+        }
+
+        auto endpoint = find(address, channel);
+        if (endpoint == nullptr)
             return io_result::failed;
-        auto pcb = endpoint_it->second->ikcp;
-        ikcp_send(pcb, (const char *)buffer.get_raw_ptr(), buffer.get_data_length());
-        set_timer(endpoint_it->second.get());
-        endpoint_it->second->last_alive = get_current_time();
+
+        auto pcb = endpoint->ikcp;
+        if (ikcp_send(pcb, (const char *)buffer.get(), buffer.get_length()) < 0) // wnd full, wait...
+        {
+            set_timer(endpoint);
+            is_await_write = true;
+            co_param.add_times();
+            return {};
+        }
+
+        set_timer(endpoint);
         return io_result::ok;
     }
 
-    co::async_result_t<io_result> aread(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t &address)
+    co::async_result_t<io_result> aread(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t &address,
+                                        int &channel)
     {
         if (param.is_stop()) /// stop timeout
         {
             socket_addr_t target;
-            co_param.stop_wait();
+            co_param = {};
+            is_await_read = false;
             socket_buffer_t recv_buffer(nullptr, 0);
             /// just stop timeout, not really read to buffer
             socket_aread_from(co_param, socket, recv_buffer, target);
-            buffer.end_process();
+            buffer.finish_walk();
             return io_result::timeout;
         }
-        if (co_param.is_stop())
-        {
-            co_param = {}; /// new
-        }
-
-        socket_buffer_t recv_buffer(1472);
 
         recv_buffer.expect().origin_length();
         socket_addr_t target;
 
-        std::unordered_set<rudp_endpoint_t *> areads;
-
         // read data no wait from kernel udp buffer
         while (socket_aread_from(co_param, socket, recv_buffer, target).is_finish())
         {
-            auto endpoint_it = user_map.find(target);
-            if (endpoint_it == user_map.end())
+            auto it = user_map.find(target);
+            if (it == user_map.end())
             {
                 if (unknown_handler)
                 {
@@ -197,39 +236,53 @@ class rudp_impl_t
                     }
                 }
             }
-            endpoint_it->second->last_alive = get_current_time();
-            areads.insert(endpoint_it->second.get());
+            int conv = ikcp_getconv(recv_buffer.get());
+            auto it2 = it->second.find(conv);
+            if (it2 == it->second.end())
+                break; // this channel isn't exist. ignore
+            auto endpoint = it2->second.get();
+            endpoint->last_alive = get_current_time();
             // udp -> ikcp
-            ikcp_input(endpoint_it->second->ikcp, (char *)recv_buffer.get_raw_ptr(), recv_buffer.get_data_length());
+            ikcp_input(endpoint->ikcp, (char *)recv_buffer.get(), recv_buffer.get_length());
+            if (ikcp_peeksize(endpoint->ikcp) > 0)
+            {
+                readable_endpoints.insert(endpoint);
+            }
 
             // reset param
             co_param = {};
             recv_buffer.expect().origin_length();
         }
-        /// reset timer
-        for (auto it : areads)
-        {
-            set_timer(it);
-        }
 
-        for (auto it : areads)
+        for (auto it = readable_endpoints.begin(); it != readable_endpoints.end();)
         {
+            auto endpoint = (*it);
             // data <- KCP <- UDP
-
-            auto len = ikcp_recv(it->ikcp, (char *)buffer.get_raw_ptr(), buffer.get_data_length());
+            auto len = ikcp_recv(endpoint->ikcp, (char *)buffer.get(), buffer.get_length());
             if (len >= 0)
             {
-                buffer.set_process_length(len);
-                buffer.end_process();
+                set_timer(endpoint);
+                buffer.walk_step(len);
+                buffer.finish_walk();
                 co_param.stop_wait();
                 // stop recv aread event.
                 socket_aread_from(co_param, socket, recv_buffer, target);
                 co_param = {};
-                address = it->remote_address;
+                address = endpoint->remote_address;
+                is_await_read = false;
+                if (ikcp_peeksize(endpoint->ikcp) < 0)
+                    readable_endpoints.erase(it);
+                channel = endpoint->channel;
+
                 return io_result::ok;
+            }
+            else
+            {
+                it = readable_endpoints.erase(it);
             }
         }
 
+        is_await_read = true;
         return {};
     }
 
@@ -240,8 +293,11 @@ class rudp_impl_t
         auto ts = (get_current_time() - base_time) / 1000;
         for (auto &it : user_map)
         {
-            ikcp_update(it.second->ikcp, ts);
-            ikcp_release(it.second->ikcp);
+            for (auto &it2 : it.second)
+            {
+                ikcp_update(it2.second->ikcp, ts);
+                ikcp_release(it2.second->ikcp);
+            }
         }
     }
 
@@ -276,6 +332,7 @@ int udp_output(const char *buf, int len, ikcpcb *kcp, void *user)
     socket_buffer_t buffer((byte *)(buf), len);
     buffer.expect().origin_length();
     endpoint->last_alive = get_current_time();
+    endpoint->can_write = true;
     // output data to kernel, sendto udp will return immediately forever.
     // so there is no need to switch to socket coroutine.
     if (co::await(socket_awrite_to, endpoint->impl->socket, buffer, endpoint->remote_address) == io_result::ok)
@@ -300,14 +357,14 @@ void rudp_t::bind(event_context_t &context, socket_addr_t addr, bool reuse_addr)
 /// bind random port
 void rudp_t::bind(event_context_t &context) { impl->bind(context); }
 
-void rudp_t::add_connection(socket_addr_t addr, microsecond_t inactive_timeout)
+void rudp_t::add_connection(socket_addr_t addr, int channel, microsecond_t inactive_timeout)
 {
-    impl->add_connection(addr, inactive_timeout);
+    impl->add_connection(addr, channel, inactive_timeout);
 }
 
-bool rudp_t::removeable(socket_addr_t addr) { return impl->removeable(addr); }
+bool rudp_t::removeable(socket_addr_t addr, int channel) { return impl->removeable(addr, channel); }
 
-void rudp_t::remove_connection(socket_addr_t addr) { impl->remove_connection(addr); }
+void rudp_t::remove_connection(socket_addr_t addr, int channel) { impl->remove_connection(addr, channel); }
 
 rudp_t &rudp_t::on_unknown_packet(unknown_handler_t handler)
 {
@@ -331,26 +388,28 @@ void rudp_t::close() { impl->close(); }
 
 /// wrappers -----------------------
 
-co::async_result_t<io_result> rudp_t::awrite(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t address)
+co::async_result_t<io_result> rudp_t::awrite(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t address,
+                                             int channel)
 {
-    return impl->awrite(param, buffer, address);
+    return impl->awrite(param, buffer, address, channel);
 }
 
-co::async_result_t<io_result> rudp_t::aread(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t &address)
+co::async_result_t<io_result> rudp_t::aread(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t &address,
+                                            int &channel)
 {
-    return impl->aread(param, buffer, address);
+    return impl->aread(param, buffer, address, channel);
 }
 
 co::async_result_t<io_result> rudp_awrite(co::paramter_t &param, rudp_t *rudp, socket_buffer_t &buffer,
-                                          socket_addr_t address)
+                                          socket_addr_t address, int channel)
 {
-    return rudp->awrite(param, buffer, address);
+    return rudp->awrite(param, buffer, address, channel);
 }
 
 co::async_result_t<io_result> rudp_aread(co::paramter_t &param, rudp_t *rudp, socket_buffer_t &buffer,
-                                         socket_addr_t &address)
+                                         socket_addr_t &address, int &channel)
 {
-    return rudp->aread(param, buffer, address);
+    return rudp->aread(param, buffer, address, channel);
 }
 
 } // namespace net
