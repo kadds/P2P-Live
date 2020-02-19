@@ -41,9 +41,8 @@ co::async_result_t<io_result> connection_t::aread_packet_head(co::paramter_t &pa
     // read head
 
     // buffer in stack
-    byte rest_buffer[sizeof(package_head_t)];
 
-    socket_buffer_t buffer(rest_buffer, sizeof(rest_buffer));
+    socket_buffer_t buffer((byte *)&head, sizeof(package_head_t));
     int length;
     assert(head.version <= 4 && head.version >= 1);
     switch (head.version)
@@ -63,29 +62,29 @@ co::async_result_t<io_result> connection_t::aread_packet_head(co::paramter_t &pa
         default:
             break;
     }
-    buffer.expect().length(length);                  /// set size we expect
-    buffer.set_process_length(sizeof(head.version)); /// save to buffer at offset 1.
+    buffer.expect().length(length);         /// set size we expect
+    buffer.walk_step(sizeof(head.version)); /// save to buffer at offset 1.
 
     auto res = socket_aread(param, socket, buffer);
     if (res.is_finish())
     {
         if (res() == io_result::ok)
         {
-            buffer.get_raw_ptr()[0] = head.version;
+            buffer.get_base_ptr()[0] = head.version;
             buffer.expect().origin_length();
             switch (head.version)
             {
                 case 1:
-                    assert(endian::cast_to(buffer, head.v1));
+                    endian::cast_inplace(head.v1, buffer);
                     break;
                 case 2:
-                    assert(endian::cast_to(buffer, head.v2));
+                    endian::cast_inplace(head.v2, buffer);
                     break;
                 case 3:
-                    assert(endian::cast_to(buffer, head.v3));
+                    endian::cast_inplace(head.v3, buffer);
                     break;
                 case 4:
-                    assert(endian::cast_to(buffer, head.v4));
+                    endian::cast_inplace(head.v4, buffer);
                     break;
                 default:
                     break;
@@ -108,7 +107,7 @@ co::async_result_t<io_result> set_head_and_send(co::paramter_t &param, E &head, 
     socket_buffer_t head_buffer(head_buffer_size);
 
     head_buffer.expect().origin_length();
-    assert(endian::save_to(head, head_buffer));
+    endian::save_to(head, head_buffer);
     auto ret = socket_awrite(param, socket, head_buffer);
     if (ret.is_finish())
     {
@@ -132,7 +131,7 @@ send_head:
         {
             case 1: {
 
-                auto ret = set_head_and_send(param, head.v1, buffer.get_data_length(), socket);
+                auto ret = set_head_and_send(param, head.v1, buffer.get_length(), socket);
                 if (ret.is_finish())
                 {
                     if (ret() != io_result::ok)
@@ -142,7 +141,7 @@ send_head:
             }
                 return {};
             case 2: {
-                auto ret = set_head_and_send(param, head.v2, buffer.get_data_length(), socket);
+                auto ret = set_head_and_send(param, head.v2, buffer.get_length(), socket);
                 if (ret.is_finish())
                 {
                     if (ret() != io_result::ok)
@@ -152,7 +151,7 @@ send_head:
             }
                 return {};
             case 3: {
-                auto ret = set_head_and_send(param, head.v3, buffer.get_data_length(), socket);
+                auto ret = set_head_and_send(param, head.v3, buffer.get_length(), socket);
                 if (ret.is_finish())
                 {
                     if (ret() != io_result::ok)
@@ -162,7 +161,7 @@ send_head:
             }
                 return {};
             case 4: {
-                auto ret = set_head_and_send(param, head.v4, buffer.get_data_length(), socket);
+                auto ret = set_head_and_send(param, head.v4, buffer.get_length(), socket);
                 if (ret.is_finish())
                 {
                     if (ret() != io_result::ok)

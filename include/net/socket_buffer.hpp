@@ -1,5 +1,6 @@
 #pragma once
 #include "net/net.hpp"
+#include <atomic>
 namespace net
 {
 struct socket_buffer_t;
@@ -18,26 +19,28 @@ struct except_buffer_helper_t
     socket_buffer_t &operator()() const { return *buf; }
 };
 
+struct socket_buffer_header_t
+{
+    std::atomic_int ref_count;
+};
+
 class socket_buffer_t
 {
     byte *ptr;
-    u64 buffer_len;
-    // valid data length
-    u64 data_len;
-    // process length in socket
-    u64 current_process;
-    // process offset set when application protocol decode
+    socket_buffer_header_t *header;
+    u64 buffer_size;
+    u64 valid_data_length;
     u64 walk_offset;
-    bool own_ptr;
 
     friend struct except_buffer_helper_t;
 
   public:
     socket_buffer_t(std::string str);
+    socket_buffer_t();
     socket_buffer_t(u64 len);
     socket_buffer_t(byte *buffer_ptr, u64 buffer_length);
-    socket_buffer_t(const socket_buffer_t &) = delete;
-    socket_buffer_t &operator=(const socket_buffer_t &) = delete;
+    socket_buffer_t(const socket_buffer_t &);
+    socket_buffer_t &operator=(const socket_buffer_t &);
 
     // move operation
     socket_buffer_t(socket_buffer_t &&buf);
@@ -45,22 +48,24 @@ class socket_buffer_t
 
     ~socket_buffer_t();
 
-    byte *get_raw_ptr() const { return ptr; }
-    byte *get_step_ptr() { return ptr + walk_offset; }
-    u64 get_data_length() const { return data_len; }
-    u64 get_step_rest_length() const { return data_len - walk_offset; }
-    u64 get_buffer_length() const { return buffer_len; }
-    u64 get_process_length() const { return current_process; }
+    byte *get_base_ptr() const { return ptr; }
+    byte *get() const { return ptr + walk_offset; }
 
-    void set_process_length(u64 len) { current_process = len; }
-    void end_process() { data_len = current_process; }
+    u64 get_data_length() const { return valid_data_length; }
+    u64 get_buffer_origin_length() const { return buffer_size; }
+
+    u64 get_length() const { return valid_data_length - walk_offset; }
+
+    u64 get_walk_offset() const { return walk_offset; }
+
+    void finish_walk()
+    {
+        valid_data_length = walk_offset;
+        walk_offset = 0;
+    }
 
     // except size to read/write
-    except_buffer_helper_t expect()
-    {
-        walk_offset = 0;
-        return except_buffer_helper_t(this);
-    }
+    except_buffer_helper_t expect() { return except_buffer_helper_t(this); }
 
     long write_string(const std::string &str);
     std::string to_string() const;
@@ -69,11 +74,11 @@ class socket_buffer_t
     void walk_step(u64 delta)
     {
         walk_offset += delta;
-        if (walk_offset > data_len)
-        {
-            walk_offset = data_len;
-        }
+        if (walk_offset > valid_data_length)
+            walk_offset = valid_data_length;
     }
+
+    void clear();
 };
 
 }; // namespace net

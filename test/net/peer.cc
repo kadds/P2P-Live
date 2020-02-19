@@ -44,7 +44,7 @@ TEST(PeerTest, PeerConnection)
 
 TEST(PeerTest, DataTransport)
 {
-    constexpr u64 test_size_bytes = 512;
+    constexpr u64 test_size_bytes = 4096;
     event_context_t context(event_strategy::epoll);
     event_loop_t loop;
     context.add_event_loop(&loop);
@@ -52,33 +52,38 @@ TEST(PeerTest, DataTransport)
     peer_t server(1), client(1);
 
     std::string name = "test string";
+    server.accept_channels({1});
+    client.accept_channels({1});
+
     server
         .on_meta_pull_request([&name, test_size_bytes](peer_t &server, peer_info_t *peer, u64 key) {
             socket_buffer_t buffer(name);
             buffer.expect().origin_length();
-            server.send_meta_data_to_peer(peer, key, std::move(buffer));
+            server.send_meta_data_to_peer(peer, key, 1, std::move(buffer));
         })
         .on_fragment_pull_request([](peer_t &server, peer_info_t *peer, fragment_id_t fid) {
             GTEST_ASSERT_GE(fid, 1);
             GTEST_ASSERT_LE(fid, 2);
             socket_buffer_t buffer(test_size_bytes);
             buffer.expect().origin_length();
-            buffer.get_raw_ptr()[test_size_bytes - 1] = fid;
-            server.send_fragment_to_peer(peer, fid, std::move(buffer));
+            buffer.clear();
+            buffer.get()[test_size_bytes - 1] = fid;
+            server.send_fragment_to_peer(peer, fid, 1, std::move(buffer));
         });
 
     int x = 0;
-    client.on_peer_connect([](peer_t &client, peer_info_t *peer) { client.pull_meta_data(peer, 0); })
+    client.on_peer_connect([](peer_t &client, peer_info_t *peer) { client.pull_meta_data(peer, 0, 1); })
         .on_meta_data_recv([&loop, &name](peer_t &client, socket_buffer_t &buffer, u64 key, peer_info_t *peer) {
-            GTEST_ASSERT_EQ(buffer.get_data_length(), name.size());
+            GTEST_ASSERT_EQ(key, 0);
+            GTEST_ASSERT_EQ(buffer.get_length(), name.size());
             std::string str = buffer.to_string();
             GTEST_ASSERT_EQ(str, name);
-            client.pull_fragment_from_peer(peer, {1, 2}, 0);
+            client.pull_fragment_from_peer(peer, {1, 2}, 1, 0);
         })
         .on_fragment_recv([&loop, &name, &x, test_size_bytes](peer_t &client, socket_buffer_t &buffer, fragment_id_t id,
                                                               peer_info_t *peer) {
-            GTEST_ASSERT_EQ(buffer.get_data_length(), test_size_bytes);
-            GTEST_ASSERT_EQ(buffer.get_raw_ptr()[test_size_bytes - 1], id);
+            GTEST_ASSERT_EQ(buffer.get_length(), test_size_bytes);
+            GTEST_ASSERT_EQ(buffer.get()[test_size_bytes - 1], id);
             x++;
             if (x >= 2)
             {
@@ -180,6 +185,45 @@ TEST(PeerTest, TrackerNode)
             tclients[i].request_update_trackers();
         }
     }));
+
+    loop.add_timer(make_timer(net::make_timespan(2), [&loop]() { loop.exit(0); }));
+    loop.run();
+}
+
+TEST(PeerTest, Hole)
+{
+    constexpr int test_count = 25;
+    event_context_t context(event_strategy::epoll);
+    event_loop_t loop;
+    context.add_event_loop(&loop);
+
+    tracker_server_t tserver1;
+    socket_addr_t taddrs1("127.0.0.1", 2555);
+    tserver1.bind(context, taddrs1, true);
+
+    tracker_node_client_t client1;
+    peer_t peer1(1);
+
+    tracker_node_client_t client2;
+    peer_t peer2(1);
+
+    peer1.bind(context);
+    peer2.bind(context);
+
+    client1.config(1, 30, p2p::request_strategy::random);
+    client1.connect_server(context, taddrs1, make_timespan_full());
+
+    client1.on_nodes_update([&peer1](tracker_node_client_t &client, peer_node_t *nodes, u64 count) {
+        client.request_connect_node(nodes[0], peer1.get_udp());
+    });
+
+    client2.config(1, 30, p2p::request_strategy::random);
+    client2.connect_server(context, taddrs1, make_timespan_full());
+    client2.on_node_request_connect([&peer2](tracker_node_client_t &client, peer_node_t node, u16 udp_port) {
+        // peer2.connect_to_peer();
+    });
+
+    loop.add_timer(make_timer(net::make_timespan(0, 500), [&client1]() { client1.request_update_nodes(); }));
 
     loop.add_timer(make_timer(net::make_timespan(2), [&loop]() { loop.exit(0); }));
     loop.run();

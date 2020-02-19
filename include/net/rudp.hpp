@@ -39,12 +39,16 @@ class rudp_t
     void bind(event_context_t &context);
 
     /// addr remote address
-    void add_connection(socket_addr_t addr, microsecond_t inactive_timeout);
+    void add_connection(socket_addr_t addr, int channel, microsecond_t inactive_timeout);
+
+    void config(socket_addr_t addr, int channel, bool fast_mode, int level);
+
+    void set_wndsize(socket_addr_t addr, int channel, int send, int recv);
 
     /// clear remote address restrictions
-    void remove_connection(socket_addr_t addr);
+    void remove_connection(socket_addr_t addr, int channel);
 
-    bool removeable(socket_addr_t addr);
+    bool removeable(socket_addr_t addr, int channel);
 
     rudp_t &on_unknown_packet(unknown_handler_t handler);
 
@@ -53,8 +57,10 @@ class rudp_t
     /// call 'bind' before call this function
     void run(std::function<void()> func);
 
-    co::async_result_t<io_result> awrite(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t address);
-    co::async_result_t<io_result> aread(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t &address);
+    co::async_result_t<io_result> awrite(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t address,
+                                         int channel);
+    co::async_result_t<io_result> aread(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t &address,
+                                        int &channel);
 
     socket_t *get_socket() const;
 
@@ -70,8 +76,8 @@ class rudp_t
 
 // wrapper functions
 co::async_result_t<io_result> rudp_awrite(co::paramter_t &param, rudp_t *rudp, socket_buffer_t &buffer,
-                                          socket_addr_t address);
+                                          socket_addr_t address, int channel);
 co::async_result_t<io_result> rudp_aread(co::paramter_t &param, rudp_t *rudp, socket_buffer_t &buffer,
-                                         socket_addr_t &address);
+                                         socket_addr_t &address, int &channel);
 
 } // namespace net

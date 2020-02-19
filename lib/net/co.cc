@@ -6,9 +6,14 @@ namespace net::co
 ctx::fiber &&co_wrapper(ctx::fiber &&sink, coroutine_t *co)
 {
     co->context = std::move(sink);
-    co_cur->func();
-    /// FIXME: return co
-    std::move(co->context).resume();
+    try
+    {
+        co_cur->func();
+    } catch (const coroutine_stop_exception &e)
+    {
+    }
+    co->is_stop = true;
+    return std::move(co->context);
 }
 
 ctx::fiber &&co_reschedule_wrapper(ctx::fiber &&sink, coroutine_t *co, std::function<void()> func)

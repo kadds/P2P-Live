@@ -122,8 +122,8 @@ template <typename T> inline void cast_struct(T &val)
 
 template <typename T> inline bool cast_to(socket_buffer_t &buffer, T &val)
 {
-    auto ptr_from = buffer.get_step_ptr();
-    if (buffer.get_step_rest_length() < sizeof(val))
+    auto ptr_from = buffer.get();
+    if (buffer.get_length() < sizeof(val))
         return false;
     memcpy(&val, ptr_from, sizeof(val));
     cast<T>(val);
@@ -132,8 +132,8 @@ template <typename T> inline bool cast_to(socket_buffer_t &buffer, T &val)
 
 template <typename T> inline bool save_to(T &val, socket_buffer_t &buffer)
 {
-    auto ptr = buffer.get_step_ptr();
-    if (buffer.get_step_rest_length() < sizeof(val))
+    auto ptr = buffer.get();
+    if (buffer.get_length() < sizeof(val))
         return false;
     cast<T>(val);
     memcpy(ptr, &val, sizeof(val));
@@ -142,8 +142,8 @@ template <typename T> inline bool save_to(T &val, socket_buffer_t &buffer)
 
 template <typename T> inline bool cast_inplace(T &val, socket_buffer_t &buffer)
 {
-    assert((byte *)&val == buffer.get_step_ptr());
-    if (buffer.get_step_rest_length() < sizeof(val))
+    assert((byte *)&val == buffer.get());
+    if (buffer.get_length() < sizeof(val))
         return false;
     cast<T>(val);
     return true;
