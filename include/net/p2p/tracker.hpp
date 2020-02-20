@@ -103,16 +103,18 @@ struct tracker_ping_pong_t
     using member_list_t = serialization::typelist_t<u16, u32, u32, u32>;
 };
 
-struct peer_node_t
+struct tracker_peer_node_t
 {
     u16 port;
+    u16 udp_port;
     u32 ip;
     using member_list_t = serialization::typelist_t<u16, u32>;
 };
 
-struct tracker_node_t
+struct tracker_tracker_node_t
 {
     u16 port;
+    u16 udp_port;
     u32 ip;
     using member_list_t = serialization::typelist_t<u16, u32>;
 };
@@ -143,7 +145,7 @@ struct get_nodes_respond_t
     u16 return_count;
     u32 available_count;
     u64 sid;
-    peer_node_t peers[0];
+    tracker_peer_node_t peers[0];
     using member_list_t = serialization::typelist_t<u16, u32, u64>;
 };
 
@@ -158,7 +160,7 @@ struct get_trackers_respond_t
 {
     u16 return_count;
     u32 available_count;
-    tracker_node_t trackers[0];
+    tracker_tracker_node_t trackers[0];
     using member_list_t = serialization::typelist_t<u16, u32>;
 };
 
@@ -170,18 +172,44 @@ constexpr u64 conn_request_magic = 0xC0FF8888;
 struct udp_connection_request_t
 {
     u32 magic;
-    u8 ttl;
     u16 target_port;
     u32 target_ip;
     u16 from_port;
     u32 from_ip;
     u16 from_udp_port;
     u64 sid;
-    u64 key;
-    using member_list_t = serialization::typelist_t<u32, u8, u16, u32, u16, u32, u16, u64>;
+    using member_list_t = serialization::typelist_t<u32, u16, u32, u16, u32, u16, u64>;
 };
 
 #pragma pack(pop)
+
+struct peer_node_t
+{
+    u16 port;
+    u16 udp_port;
+    u32 ip;
+    peer_node_t(){};
+    peer_node_t(u16 port, u16 udp_port, u32 ip)
+        : port(port)
+        , udp_port(udp_port)
+        , ip(ip)
+    {
+    }
+};
+
+struct tracker_node_t
+{
+    u16 port;
+    u16 udp_port;
+    u32 ip;
+    tracker_node_t(){};
+    tracker_node_t(u16 port, u16 udp_port, u32 ip)
+        : port(port)
+        , udp_port(udp_port)
+        , ip(ip)
+    {
+    }
+};
 
 struct tracker_info_t
 {
@@ -244,7 +272,7 @@ class tracker_server_t
 
     void server_main(tcp::connection_t conn);
     void client_main(tcp::connection_t conn);
-    void udp_main();
+    void udp_main(rudp_connection_t conn);
 
     /// save index of tracker_infos
     std::unordered_map<socket_addr_t, std::unique_ptr<tracker_info_t>, addr_hash_func> trackers;
@@ -261,7 +289,6 @@ class tracker_server_t
     tracker_server_t &on_link_error(error_handler_t handler);
     std::vector<tracker_node_t> get_trackers() const;
 };
-
 /// client under NAT or not
 class tracker_node_client_t
 {

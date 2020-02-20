@@ -1,4 +1,5 @@
 #pragma once
+#include "execute_dispatcher.hpp"
 #include "net.hpp"
 #include "timer.hpp"
 #include <functional>
@@ -10,7 +11,7 @@
 namespace net
 {
 using handle_t = int;
-
+class execute_context_t;
 using event_type_t = unsigned long;
 namespace event_type
 {
@@ -28,9 +29,6 @@ enum : event_type_t
 class socket_t;
 class event_context_t;
 class event_loop_t;
-
-using socket_handle_map_t = std::unordered_map<handle_t, socket_t *>;
-using socket_event_loop_map_t = std::unordered_map<handle_t, event_loop_t *>;
 
 enum event_strategy
 {
@@ -66,6 +64,16 @@ class event_demultiplexer
     virtual ~event_demultiplexer(){};
 };
 
+class event_handler_t
+{
+  public:
+    virtual void on_event(event_context_t &, event_type_t) = 0;
+    virtual ~event_handler_t(){};
+};
+
+using event_handle_map_t = std::unordered_map<handle_t, event_handler_t *>;
+using socket_event_loop_map_t = std::unordered_map<handle_t, event_loop_t *>;
+
 /// event loop
 /// a loop pre thread
 /// all event is generate by demultiplexer. event loop just fetch event and distribute event run into event coroutine.
@@ -75,10 +83,11 @@ class event_loop_t
     bool is_exit;
     int exit_code;
     event_demultiplexer *demuxer;
-    socket_handle_map_t socket_map;
+    event_handle_map_t event_map;
     friend class event_context_t;
     event_context_t *context;
     std::unique_ptr<time_manager_t> time_manager;
+    execute_thread_dispatcher_t dispatcher;
 
   private:
     void add_socket(socket_t *socket_t);
@@ -99,17 +108,22 @@ class event_loop_t
     void exit(int code);
     int load_factor();
 
-    event_loop_t &link(socket_t *socket_t, event_type_t type);
-    event_loop_t &unlink(socket_t *socket_t, event_type_t type);
+    event_loop_t &link(handle_t handle, event_type_t type);
+    event_loop_t &unlink(handle_t handle, event_type_t type);
+
+    void add_event_handler(handle_t handle, event_handler_t *handler);
+    void remove_event_handler(handle_t handle, event_handler_t *handler);
+
     timer_registered_t add_timer(timer_t timer);
     void remove_timer(timer_registered_t);
+
+    execute_thread_dispatcher_t &get_dispatcher();
 
     static event_loop_t &current();
 };
 
 /// event context
 /// unique global context in an application
-/// manage event loop
 class event_context_t
 {
     event_strategy strategy;
@@ -120,8 +134,11 @@ class event_context_t
 
   public:
     event_context_t(event_strategy strategy);
-    event_loop_t &add_socket(socket_t *socket_t);
-    event_loop_t *remove_socket(socket_t *socket_t);
+    void add_executor(execute_context_t *exectx);
+    void add_executor(execute_context_t *exectx, event_loop_t *loop);
+    void remove_executor(execute_context_t *exectx);
+
+    event_loop_t &select_loop();
 
     void add_event_loop(event_loop_t *loop);
     void remove_event_loop(event_loop_t *loop);

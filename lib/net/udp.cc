@@ -6,14 +6,20 @@ socket_t *server_t::bind(event_context_t &context, socket_addr_t addr, bool reus
 {
     this->context = &context;
     socket = new_udp_socket();
-    context.add_socket(socket);
+    socket->bind_context(context);
     if (reuse_port)
         reuse_port_socket(socket, true);
     bind_at(socket, addr);
     return socket;
 }
 
-void server_t::run(std::function<void()> func) { socket->startup_coroutine(co::coroutine_t::create(func)); }
+void server_t::run(std::function<void()> func)
+{
+    socket->run([func, this]() {
+        func();
+        close();
+    });
+}
 
 server_t::~server_t() { close(); }
 
@@ -21,20 +27,10 @@ void server_t::close()
 {
     if (!socket)
         return;
+    socket->unbind_context();
 
-    context->remove_socket(socket);
-    if (co::coroutine_t::in_coroutine(socket->get_coroutine()))
-    {
-        co::coroutine_t::yield([this]() {
-            close_socket(socket);
-            socket = nullptr;
-        });
-    }
-    else
-    {
-        close_socket(socket);
-        socket = nullptr;
-    }
+    close_socket(socket);
+    socket = nullptr;
 }
 
 client_t::~client_t() { close(); }
@@ -44,7 +40,7 @@ void client_t::connect(event_context_t &context, socket_addr_t addr, bool remote
     this->context = &context;
     connect_addr = addr;
     socket = new_udp_socket();
-    context.add_socket(socket);
+    socket->bind_context(context);
     if (remote_address_bind_to_socket)
     {
         /// connect udp must return immediately.
@@ -52,7 +48,13 @@ void client_t::connect(event_context_t &context, socket_addr_t addr, bool remote
     }
 }
 
-void client_t::run(std::function<void()> func) { socket->startup_coroutine(co::coroutine_t::create(func)); }
+void client_t::run(std::function<void()> func)
+{
+    socket->run([func, this]() {
+        func();
+        close();
+    });
+}
 
 socket_addr_t client_t::get_address() const { return connect_addr; }
 
@@ -60,20 +62,10 @@ void client_t::close()
 {
     if (!socket)
         return;
+    socket->unbind_context();
 
-    context->remove_socket(socket);
-    if (co::coroutine_t::in_coroutine(socket->get_coroutine()))
-    {
-        co::coroutine_t::yield([this]() {
-            close_socket(socket);
-            socket = nullptr;
-        });
-    }
-    else
-    {
-        close_socket(socket);
-        socket = nullptr;
-    }
+    close_socket(socket);
+    socket = nullptr;
 }
 
 } // namespace net::udp

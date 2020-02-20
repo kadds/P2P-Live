@@ -150,11 +150,13 @@ struct channel_info_t
 
     fragment_id_t fragment_recv_id;
     socket_buffer_t fragment_recv_buffer_cache;
+
+    rudp_connection_t conn;
 };
 
 struct peer_info_t
 {
-    std::unordered_map<channel_t, channel_info_t> queues;
+    std::unordered_map<channel_t, channel_info_t> channel;
 
     socket_addr_t remote_address;
     microsecond_t last_ping;
@@ -195,27 +197,24 @@ class peer_t
     peer_connect_ok_t connect_handler;
     pull_request_t fragment_handler;
     pull_request_t meta_handler;
-    void main();
-    void heartbeat(socket_addr_t address);
-
-    timer_registered_t timer;
-
-    std::queue<peer_info_t *> sendable_peers;
+    void main(rudp_connection_t conn);
+    void heartbeat(rudp_connection_t conn);
 
     u64 heartbeat_tick = 30000000;
     u64 disconnect_tick = 120000000;
     std::vector<channel_t> channels;
 
-    void update_fragments(std::vector<fragment_id_t> ids, u8 priority, channel_t channel, peer_info_t *target);
-    void update_metainfo(u64 key, channel_t channel, peer_info_t *target);
-    void send_metainfo(u64 key, channel_t channel, socket_buffer_t buffer, peer_info_t *target);
-    void send_fragments(fragment_id_t id, channel_t channel, socket_buffer_t buffer, peer_info_t *target);
+    void update_fragments(std::vector<fragment_id_t> ids, u8 priority, rudp_connection_t conn);
+    void update_metainfo(u64 key, rudp_connection_t conn);
+    void send_metainfo(u64 key, socket_buffer_t buffer, rudp_connection_t conn);
+    void send_fragments(fragment_id_t id, socket_buffer_t buffer, rudp_connection_t conn);
 
-    void send_init(peer_info_t *target);
-    void do_write();
-    void async_do_write();
+    void send_init(rudp_connection_t conn);
+    void async_do_write(peer_info_t *peer, int channel);
 
     peer_info_t *find_peer(socket_addr_t addr);
+
+    void bind_udp();
 
   public:
     peer_t(session_id_t sid);
@@ -229,7 +228,7 @@ class peer_t
     void accept_channels(const std::vector<channel_t> &channels);
 
     peer_info_t *add_peer();
-    void connect_to_peer(peer_info_t *peer, socket_addr_t server_addr);
+    void connect_to_peer(peer_info_t *peer, socket_addr_t remote_addr);
     void disconnect(peer_info_t *peer);
 
     peer_t &on_meta_data_recv(peer_data_recv_t handler);

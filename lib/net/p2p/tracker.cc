@@ -112,11 +112,11 @@ void tracker_server_t::server_main(tcp::connection_t conn)
             head.version = 4;
             head.v4.msg_type = tracker_packet::get_nodes_respond;
             std::unique_ptr<char[]> data =
-                std::make_unique<char[]>(sizeof(get_nodes_respond_t) + request.max_count * sizeof(peer_node_t));
+                std::make_unique<char[]>(sizeof(get_nodes_respond_t) + request.max_count * sizeof(tracker_peer_node_t));
             get_nodes_respond_t *respond = (get_nodes_respond_t *)data.get();
             // use buffer from 'data'
             socket_buffer_t send_buffer((byte *)data.get(),
-                                        sizeof(get_nodes_respond_t) + request.max_count * sizeof(peer_node_t));
+                                        sizeof(get_nodes_respond_t) + request.max_count * sizeof(tracker_peer_node_t));
             send_buffer.expect().origin_length();
             // skip head
             send_buffer.walk_step(sizeof(get_nodes_respond_t));
@@ -135,9 +135,12 @@ void tracker_server_t::server_main(tcp::connection_t conn)
                         if (get_current_time() - node_infos[j].last_ping <= node_tick_times * node_tick_timespan)
                         {
                             // add
-                            respond->peers[i] = node_infos[j].node;
+                            respond->peers[i].ip = node_infos[j].node.ip;
+                            respond->peers[i].port = node_infos[j].node.port;
+                            respond->peers[i].udp_port = node_infos[j].node.udp_port;
+
                             endian::cast_inplace(respond->peers[i++], send_buffer);
-                            send_buffer.walk_step(sizeof(peer_node_t));
+                            send_buffer.walk_step(sizeof(tracker_peer_node_t));
                         }
                     }
                 }
@@ -159,7 +162,7 @@ void tracker_server_t::server_main(tcp::connection_t conn)
 
             send_buffer.expect().origin_length();
             endian::cast_inplace(*respond, send_buffer);
-            send_buffer.expect().length(sizeof(get_nodes_respond_t) + i * sizeof(peer_node_t));
+            send_buffer.expect().length(sizeof(get_nodes_respond_t) + i * sizeof(tracker_peer_node_t));
 
             co::await(tcp::conn_awrite_packet, conn, head, send_buffer);
         }
@@ -181,11 +184,11 @@ void tracker_server_t::server_main(tcp::connection_t conn)
             // set respond header
             head.version = 4;
             head.v4.msg_type = tracker_packet::get_trackers_respond;
-            std::unique_ptr<char[]> data =
-                std::make_unique<char[]>(sizeof(get_trackers_respond_t) + request.max_count * sizeof(tracker_node_t));
+            std::unique_ptr<char[]> data = std::make_unique<char[]>(sizeof(get_trackers_respond_t) +
+                                                                    request.max_count * sizeof(tracker_tracker_node_t));
             get_trackers_respond_t *respond = (get_trackers_respond_t *)data.get();
-            socket_buffer_t send_buffer((byte *)data.get(),
-                                        sizeof(get_trackers_respond_t) + request.max_count * sizeof(tracker_node_t));
+            socket_buffer_t send_buffer((byte *)data.get(), sizeof(get_trackers_respond_t) +
+                                                                request.max_count * sizeof(tracker_tracker_node_t));
             send_buffer.expect().origin_length();
             // skip head first
             send_buffer.walk_step(sizeof(get_trackers_respond_t));
@@ -200,8 +203,12 @@ void tracker_server_t::server_main(tcp::connection_t conn)
                     continue;
                 }
                 auto node = it->second->node;
-                endian::save_to(node, send_buffer);
-                send_buffer.walk_step(sizeof(tracker_node_t));
+                tracker_tracker_node_t tnode;
+                tnode.port = node.port;
+                tnode.udp_port = node.udp_port;
+                tnode.ip = node.ip;
+                endian::save_to(tnode, send_buffer);
+                send_buffer.walk_step(sizeof(tracker_tracker_node_t));
                 i++;
                 ++it;
             }
@@ -211,7 +218,7 @@ void tracker_server_t::server_main(tcp::connection_t conn)
 
             send_buffer.expect().origin_length();
             endian::cast_inplace(*respond, send_buffer);
-            send_buffer.expect().length(sizeof(get_trackers_respond_t) + i * sizeof(tracker_node_t));
+            send_buffer.expect().length(sizeof(get_trackers_respond_t) + i * sizeof(tracker_tracker_node_t));
             // send
             co::await(tcp::conn_awrite_packet, conn, head, send_buffer);
         }
@@ -276,49 +283,44 @@ void tracker_server_t::client_main(tcp::connection_t conn)
     }
 }
 
-void tracker_server_t::udp_main()
+void tracker_server_t::udp_main(rudp_connection_t conn)
 {
     socket_buffer_t buffer(udp.get_mtu());
-    socket_addr_t addr;
     udp_connection_request_t request;
-    while (1)
-    {
+    buffer.expect().origin_length();
+    int ch;
+    co::await(rudp_aread, &udp, conn, buffer);
+    if (buffer.get_length() != sizeof(udp_connection_request_t))
+        return;
+
+    endian::cast_to(buffer, request);
+    if (request.magic != conn_request_magic)
+        return;
+    if (request.from_port == 0)
+        return;
+
+    socket_addr_t from_node_addr(request.from_ip, request.from_port);
+    auto it = nodes.find(from_node_addr);
+    if (it == nodes.end())
+        return;
+
+    auto idx = it->second;
+    auto node_info = node_infos[idx];
+    auto tcpconn = node_info.conn;
+
+    /// NOTE: this port may be a NAT port
+    request.from_udp_port = conn.address.get_port();
+
+    /// XXX: reschedule to tcp coroutine
+    node_info.conn.get_socket()->start_with([tcpconn, request]() {
+        tcp::package_head_t head;
+        head.version = 4;
+        head.v4.msg_type = tracker_packet::peer_request;
+        socket_buffer_t buffer((byte *)&request, sizeof(request));
         buffer.expect().origin_length();
-        int ch;
-        co::await(rudp_aread, &udp, buffer, addr, ch);
-        if (buffer.get_length() != sizeof(udp_connection_request_t) || ch != 0)
-            continue;
-
-        endian::cast_to(buffer, request);
-        if (request.magic != conn_request_magic)
-            continue;
-        if (request.from_port == 0)
-            continue;
-        if (request.ttl == 0)
-            continue;
-
-        socket_addr_t from_node_addr(request.from_ip, request.from_port);
-        auto it = nodes.find(from_node_addr);
-        if (it == nodes.end())
-            continue;
-        auto idx = it->second;
-        auto node_info = node_infos[idx];
-        auto conn = node_info.conn;
-        request.ttl--;
-        /// NOTE: this port may be a NAT port
-        request.from_udp_port = addr.get_port();
-
-        /// XXX: reschedule to coroutine
-        node_info.conn.get_socket()->get_coroutine()->resume_with([conn, request]() {
-            tcp::package_head_t head;
-            head.version = 4;
-            head.v4.msg_type = tracker_packet::peer_request;
-            socket_buffer_t buffer((byte *)&request, sizeof(request));
-            buffer.expect().origin_length();
-            endian::cast_inplace(request, buffer);
-            co::await(tcp::conn_awrite_packet, conn, head, buffer);
-        });
-    }
+        endian::cast_inplace(request, buffer);
+        co::await(tcp::conn_awrite_packet, tcpconn, head, buffer);
+    });
 }
 
 void tracker_server_t::bind(event_context_t &context, socket_addr_t addr, bool reuse_addr)
@@ -337,7 +339,7 @@ void tracker_server_t::bind(event_context_t &context, socket_addr_t addr, bool r
 
     udp.bind(context);
     udp_port = udp.get_socket()->local_addr().get_port();
-    udp.run(std::bind(&tracker_server_t::udp_main, this));
+    udp.on_new_connection(std::bind(&tracker_server_t::udp_main, this, std::placeholders::_1));
 }
 
 void tracker_server_t::link_other_tracker_server(event_context_t &context, socket_addr_t addr, microsecond_t timeout)
@@ -459,18 +461,18 @@ void tracker_node_client_t::main(tcp::connection_t conn)
             if (respond.return_count > 1000)
                 return;
             /// get rest node
-            std::unique_ptr<char[]> data = std::make_unique<char[]>(respond.return_count * sizeof(peer_node_t));
-            socket_buffer_t recv_data_buffer((byte *)data.get(), respond.return_count * sizeof(peer_node_t));
+            std::unique_ptr<char[]> data = std::make_unique<char[]>(respond.return_count * sizeof(tracker_peer_node_t));
+            socket_buffer_t recv_data_buffer((byte *)data.get(), respond.return_count * sizeof(tracker_peer_node_t));
             recv_data_buffer.expect().origin_length();
             co::await(tcp::conn_aread_packet_content, conn, recv_data_buffer);
-            peer_node_t *node = (peer_node_t *)data.get();
+            tracker_peer_node_t *node = (tracker_peer_node_t *)data.get();
             for (auto i = 0; i < respond.return_count; i++)
             {
                 endian::cast_inplace(node[i], recv_data_buffer);
-                recv_data_buffer.walk_step(sizeof(peer_node_t));
+                recv_data_buffer.walk_step(sizeof(tracker_peer_node_t));
             }
             if (node_update_handler)
-                node_update_handler(*this, node, (u64)respond.return_count);
+                node_update_handler(*this, (peer_node_t *)node, (u64)respond.return_count);
         }
         else if (head.v4.msg_type == tracker_packet::get_trackers_respond)
         {
@@ -485,18 +487,19 @@ void tracker_node_client_t::main(tcp::connection_t conn)
             if (respond.return_count > 1000)
                 return;
             /// get rest node
-            std::unique_ptr<char[]> data = std::make_unique<char[]>(respond.return_count * sizeof(tracker_node_t));
-            socket_buffer_t recv_data_buffer((byte *)data.get(), respond.return_count * sizeof(tracker_node_t));
+            std::unique_ptr<char[]> data =
+                std::make_unique<char[]>(respond.return_count * sizeof(tracker_tracker_node_t));
+            socket_buffer_t recv_data_buffer((byte *)data.get(), respond.return_count * sizeof(tracker_tracker_node_t));
             recv_data_buffer.expect().origin_length();
             co::await(tcp::conn_aread_packet_content, conn, recv_data_buffer);
-            tracker_node_t *node = (tracker_node_t *)data.get();
+            tracker_tracker_node_t *node = (tracker_tracker_node_t *)data.get();
             for (auto i = 0; i < respond.return_count; i++)
             {
                 endian::cast_inplace(node[i], recv_data_buffer);
-                recv_data_buffer.walk_step(sizeof(tracker_node_t));
+                recv_data_buffer.walk_step(sizeof(tracker_tracker_node_t));
             }
             if (tracker_update_handler)
-                tracker_update_handler(*this, node, (u64)respond.return_count);
+                tracker_update_handler(*this, (tracker_node_t *)node, (u64)respond.return_count);
         }
         else if (head.v4.msg_type == tracker_packet::peer_request)
         {
@@ -514,6 +517,7 @@ void tracker_node_client_t::main(tcp::connection_t conn)
             peer_node_t node;
             node.ip = request.from_ip;
             node.port = request.from_port;
+            node.udp_port = request.from_udp_port;
 
             if (connect_handler)
                 connect_handler(*this, node, request.from_udp_port);
@@ -581,8 +585,7 @@ void tracker_node_client_t::request_update_trackers()
     {
         if (wait_next_package)
         {
-            client.get_socket()->get_coroutine()->resume_with(
-                [this]() { update_trackers(100, request_strategy::min_workload); });
+            client.get_socket()->start_with([this]() { update_trackers(100, request_strategy::min_workload); });
         }
         return;
     }
@@ -596,7 +599,7 @@ void tracker_node_client_t::request_update_nodes()
     {
         if (wait_next_package)
         {
-            client.get_socket()->get_coroutine()->resume_with([this]() { update_nodes(); });
+            client.get_socket()->start_with([this]() { update_nodes(); });
         }
         return;
     }
@@ -605,18 +608,20 @@ void tracker_node_client_t::request_update_nodes()
 
 void tracker_node_client_t::request_connect_node(peer_node_t node, rudp_t &udp)
 {
-    udp_connection_request_t req;
-    socket_buffer_t buffer((byte *)&req, sizeof(req));
-    req.from_ip = client_outer_ip;
-    req.from_port = client_outer_port;
-    req.ttl = 3;
-    req.target_ip = node.ip;
-    req.target_port = node.port;
-    req.sid = sid;
-    req.key = 1;
-    buffer.expect().origin_length();
-    endian::cast_inplace(req, buffer);
-    co::await(rudp_awrite, &udp, buffer, server_udp_address, 0);
+    socket_addr_t peer_addr(node.ip, node.udp_port);
+    udp.add_connection(peer_addr, 0, timeout, [this, &udp, node](rudp_connection_t conn) {
+        udp_connection_request_t req;
+        socket_buffer_t buffer((byte *)&req, sizeof(req));
+        req.from_ip = client_outer_ip;
+        req.from_port = client_outer_port;
+        req.from_udp_port = udp.get_socket()->local_addr().get_port();
+        req.target_ip = node.ip;
+        req.target_port = node.port;
+        req.sid = sid;
+        buffer.expect().origin_length();
+        endian::cast_inplace(req, buffer);
+        co::await(rudp_awrite, &udp, conn, buffer);
+    });
 }
 
 tracker_node_client_t &tracker_node_client_t::on_node_request_connect(nodes_connect_handler_t handler)

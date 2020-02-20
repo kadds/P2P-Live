@@ -10,11 +10,18 @@ namespace net
 {
 class event_context_t;
 class rudp_impl_t;
+class socket_t;
+
+struct rudp_connection_t
+{
+    socket_addr_t address;
+    int channel;
+};
 
 class rudp_t
 {
   public:
-    using data_handler_t = std::function<void(rudp_t &, socket_buffer_t buffer)>;
+    using new_connection_handler_t = std::function<void(rudp_connection_t conn)>;
 
     /// return false will discard current packet
     using unknown_handler_t = std::function<bool(socket_addr_t address)>;
@@ -41,10 +48,14 @@ class rudp_t
     /// addr remote address
     void add_connection(socket_addr_t addr, int channel, microsecond_t inactive_timeout);
 
+    void add_connection(socket_addr_t addr, int channel, microsecond_t inactive_timeout,
+                        std::function<void(rudp_connection_t)> co_func);
+
     void config(socket_addr_t addr, int channel, bool fast_mode, int level);
 
     void set_wndsize(socket_addr_t addr, int channel, int send, int recv);
 
+    void on_new_connection(new_connection_handler_t handler);
     /// clear remote address restrictions
     void remove_connection(socket_addr_t addr, int channel);
 
@@ -54,13 +65,10 @@ class rudp_t
 
     rudp_t &on_connection_timeout(timeout_handler_t handler);
 
-    /// call 'bind' before call this function
-    void run(std::function<void()> func);
+    co::async_result_t<io_result> awrite(co::paramter_t &param, rudp_connection_t conn, socket_buffer_t &buffer);
+    co::async_result_t<io_result> aread(co::paramter_t &param, rudp_connection_t conn, socket_buffer_t &buffer);
 
-    co::async_result_t<io_result> awrite(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t address,
-                                         int channel);
-    co::async_result_t<io_result> aread(co::paramter_t &param, socket_buffer_t &buffer, socket_addr_t &address,
-                                        int &channel);
+    void run_at(rudp_connection_t conn, std::function<void()> func);
 
     socket_t *get_socket() const;
 
@@ -75,9 +83,9 @@ class rudp_t
 };
 
 // wrapper functions
-co::async_result_t<io_result> rudp_awrite(co::paramter_t &param, rudp_t *rudp, socket_buffer_t &buffer,
-                                          socket_addr_t address, int channel);
-co::async_result_t<io_result> rudp_aread(co::paramter_t &param, rudp_t *rudp, socket_buffer_t &buffer,
-                                         socket_addr_t &address, int &channel);
+co::async_result_t<io_result> rudp_awrite(co::paramter_t &param, rudp_t *rudp, rudp_connection_t conn,
+                                          socket_buffer_t &buffer);
+co::async_result_t<io_result> rudp_aread(co::paramter_t &param, rudp_t *rudp, rudp_connection_t conn,
+                                         socket_buffer_t &buffer);
 
 } // namespace net

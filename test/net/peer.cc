@@ -100,14 +100,14 @@ TEST(PeerTest, DataTransport)
     client.connect_to_peer(server_peer, socket_addr_t("127.0.0.1", server.get_socket()->local_addr().get_port()));
     server.connect_to_peer(client_peer, socket_addr_t("127.0.0.1", client.get_socket()->local_addr().get_port()));
 
-    // loop.add_timer(make_timer(net::make_timespan(2), [&loop]() { loop.exit(-1); }));
+    loop.add_timer(make_timer(net::make_timespan(2), [&loop]() { loop.exit(-1); }));
     loop.run();
     GTEST_ASSERT_EQ(x, 2);
 }
 
 TEST(PeerTest, TrackerPingPong)
 {
-    constexpr int test_count = 25;
+    constexpr int test_count = 50;
     event_context_t context(event_strategy::epoll);
     event_loop_t loop;
     context.add_event_loop(&loop);
@@ -130,7 +130,7 @@ TEST(PeerTest, TrackerPingPong)
         }
     }
 
-    loop.add_timer(make_timer(net::make_timespan(2), [&loop, &servers, &addrs]() {
+    loop.add_timer(make_timer(net::make_timespan(3), [&loop, &servers, &addrs]() {
         for (auto i = 0; i < test_count; i++)
         {
             auto peer = servers[i].get_trackers();
@@ -190,41 +190,68 @@ TEST(PeerTest, TrackerNode)
     loop.run();
 }
 
-TEST(PeerTest, Hole)
+struct peer_hash_func_t
 {
-    constexpr int test_count = 25;
+    u64 operator()(const socket_addr_t &addr) const { return addr.hash(); }
+};
+
+void static peer_main(event_context_t &ctx, socket_addr_t taddr, tracker_node_client_t &client, peer_t &peer,
+                      int &flags, event_loop_t &loop,
+                      std::unordered_map<socket_addr_t, peer_info_t *, peer_hash_func_t> &remote_peers)
+{
+    peer.bind(ctx);
+    client.config(1, 30, p2p::request_strategy::random);
+    client.connect_server(ctx, taddr, make_timespan_full());
+
+    client
+        .on_nodes_update([&peer, &remote_peers](tracker_node_client_t &client, peer_node_t *nodes, u64 count) {
+            for (auto i = 0; i < count; i++)
+            {
+                client.request_connect_node(nodes[i], peer.get_udp());
+            }
+        })
+        .on_node_request_connect([&peer, &remote_peers](tracker_node_client_t &client, peer_node_t node, u16 udp_port) {
+            // 如果A可以直连这里会连接成功，后面的request会被对方忽略
+            socket_addr_t addr(node.ip, udp_port);
+            if (remote_peers[addr] != nullptr)
+                return;
+
+            peer.connect_to_peer(peer.add_peer(), socket_addr_t(node.ip, udp_port));
+            client.request_connect_node(node, peer.get_udp());
+        });
+    peer.on_peer_connect([&flags, &loop, &remote_peers](peer_t &peer, peer_info_t *p) {
+        remote_peers[p->remote_address] = p;
+        flags++;
+        if (flags > 1)
+            loop.exit(0);
+    });
+}
+
+TEST(PeerTest, NATSend)
+{
     event_context_t context(event_strategy::epoll);
     event_loop_t loop;
     context.add_event_loop(&loop);
 
     tracker_server_t tserver1;
-    socket_addr_t taddrs1("127.0.0.1", 2555);
+    socket_addr_t taddrs1("127.0.0.1", 2558);
     tserver1.bind(context, taddrs1, true);
 
-    tracker_node_client_t client1;
-    peer_t peer1(1);
+    tracker_node_client_t client;
+    peer_t peer(10);
 
     tracker_node_client_t client2;
-    peer_t peer2(1);
+    peer_t peer2(10);
+    std::unordered_map<socket_addr_t, peer_info_t *, peer_hash_func_t> remote_peers;
+    std::unordered_map<socket_addr_t, peer_info_t *, peer_hash_func_t> remote_peers2;
 
-    peer1.bind(context);
-    peer2.bind(context);
+    int flags;
 
-    client1.config(1, 30, p2p::request_strategy::random);
-    client1.connect_server(context, taddrs1, make_timespan_full());
+    peer_main(context, taddrs1, client, peer, flags, loop, remote_peers);
+    peer_main(context, taddrs1, client2, peer2, flags, loop, remote_peers2);
 
-    client1.on_nodes_update([&peer1](tracker_node_client_t &client, peer_node_t *nodes, u64 count) {
-        client.request_connect_node(nodes[0], peer1.get_udp());
-    });
+    loop.add_timer(make_timer(net::make_timespan(0, 500), [&client]() { client.request_update_nodes(); }));
 
-    client2.config(1, 30, p2p::request_strategy::random);
-    client2.connect_server(context, taddrs1, make_timespan_full());
-    client2.on_node_request_connect([&peer2](tracker_node_client_t &client, peer_node_t node, u16 udp_port) {
-        // peer2.connect_to_peer();
-    });
-
-    loop.add_timer(make_timer(net::make_timespan(0, 500), [&client1]() { client1.request_update_nodes(); }));
-
-    loop.add_timer(make_timer(net::make_timespan(2), [&loop]() { loop.exit(0); }));
+    loop.add_timer(make_timer(net::make_timespan(3), [&loop]() { loop.exit(0); }));
     loop.run();
 }

@@ -27,13 +27,11 @@ TEST(UPDTest, UPDPackageTest)
         GTEST_ASSERT_EQ(buffer.to_string(), test_data);
         buffer.expect().origin_length();
         GTEST_ASSERT_EQ(co::await(socket_awrite_to, socket, buffer, addr), io_result::ok);
-        loop.exit(0);
-        server.close();
     });
 
     udp::client_t client;
     client.connect(ctx, test_addr, false);
-    client.run([&client, &test_addr]() {
+    client.run([&client, &test_addr, &loop]() {
         auto socket = client.get_socket();
         socket_buffer_t buffer(test_data);
         buffer.expect().origin_length();
@@ -42,7 +40,7 @@ TEST(UPDTest, UPDPackageTest)
         buffer.expect().origin_length();
         GTEST_ASSERT_EQ(co::await(socket_aread_from, socket, buffer, addr), io_result::ok);
         GTEST_ASSERT_EQ(buffer.to_string(), test_data);
-        client.close();
+        loop.exit(0);
     });
     loop.run();
 }
