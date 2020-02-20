@@ -6,13 +6,13 @@
 
 ## Projects
 * **client**             *src/client*  
-    The peer to peer endpoint. Client can pull video-stream from peer to peer network.
+    The peer to peer endpoint. Client can pull video-stream from peer to peer network with multi-channels.
 * **source-client**      *src/source-client*  
     The live source client application. Based on QT5. Sending video-stream to server.
 * **server**             *src/server*  
     The main functions of the server are [**UDP hole punching**](#UDP-hole-punching), instant messaging (IM), live streaming pull from the source client, room number allocation, peer to peer network control, etc.
 * **libnet**             *lib/net*  
-    libnet is an **asynchronous** network library that uses **IO multiplexing** ( *select/epoll* ) and no-blocked IO, while using [**coroutines**](#Coroutines) for each connection to improve IO response. Includes coroutines, [thread pool](#Thread-pool), timer, tcp/udp encapsulation, peer to peer network sending/receiving, tracker nodes exchange, reliable udp make by KCP, hole punching. etc...
+    libnet is an **asynchronous** network library that uses **IO multiplexing** ( *select/epoll/IOCP* ) and no-blocked IO, while using [**coroutines**](#Coroutines) for each connection to improve IO response. Includes coroutines, [thread pool](#Thread-pool), timer, tcp/udp encapsulation, peer to peer network sending/receiving, tracker nodes exchange, reliable udp make by KCP, hole punching. etc...
 
 ## Building  
 Setting up a development environment with docker (optional):

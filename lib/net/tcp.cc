@@ -19,7 +19,6 @@ co::async_result_t<io_result> connection_t::aread(co::paramter_t &param, socket_
 /// wait next packet and read tcp application head
 co::async_result_t<io_result> connection_t::aread_packet_head(co::paramter_t &param, package_head_t &head)
 {
-    /// XXX: there is a memory allocate in head.
     if (param.get_user_ptr() == 0) /// version none, first read
     {
         socket_buffer_t buffer((byte *)&head, sizeof(package_head_t));
@@ -39,8 +38,6 @@ co::async_result_t<io_result> connection_t::aread_packet_head(co::paramter_t &pa
         param.set_user_ptr((void *)1);
     }
     // read head
-
-    // buffer in stack
 
     socket_buffer_t buffer((byte *)&head, sizeof(package_head_t));
     int length;
