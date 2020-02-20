@@ -23,15 +23,12 @@ TEST(RUDPTest, Interface)
 
     int count_flag = 0;
 
-    rudp1.run([&rudp1, &loop, &count_flag, &addr2]() {
-        socket_addr_t addr;
+    rudp1.on_new_connection([&rudp1, &loop, &count_flag](rudp_connection_t conn) {
         socket_buffer_t buffer(test_data);
         buffer.expect().origin_length();
-        GTEST_ASSERT_EQ(co::await(rudp_awrite, &rudp1, buffer, addr2, 0), io_result::ok);
+        GTEST_ASSERT_EQ(co::await(rudp_awrite, &rudp1, conn, buffer), io_result::ok);
         buffer.expect().origin_length();
-        int ch;
-        GTEST_ASSERT_EQ(co::await(rudp_aread, &rudp1, buffer, addr, ch), io_result::ok);
-        GTEST_ASSERT_EQ(addr, addr2);
+        GTEST_ASSERT_EQ(co::await(rudp_aread, &rudp1, conn, buffer), io_result::ok);
 
         GTEST_ASSERT_EQ(buffer.to_string(), test_data);
         if (++count_flag > 1)
@@ -40,15 +37,12 @@ TEST(RUDPTest, Interface)
         }
     });
 
-    rudp2.run([&rudp2, &loop, &count_flag, &addr1]() {
-        socket_addr_t addr;
-        int ch;
+    rudp2.on_new_connection([&rudp2, &loop, &count_flag](rudp_connection_t conn) {
         socket_buffer_t buffer(test_data);
         buffer.expect().origin_length();
-        GTEST_ASSERT_EQ(co::await(rudp_awrite, &rudp2, buffer, addr1, 0), io_result::ok);
+        GTEST_ASSERT_EQ(co::await(rudp_awrite, &rudp2, conn, buffer), io_result::ok);
         buffer.expect().origin_length();
-        GTEST_ASSERT_EQ(co::await(rudp_aread, &rudp2, buffer, addr, ch), io_result::ok);
-        GTEST_ASSERT_EQ(addr, addr1);
+        GTEST_ASSERT_EQ(co::await(rudp_aread, &rudp2, conn, buffer), io_result::ok);
 
         GTEST_ASSERT_EQ(buffer.to_string(), test_data);
         if (++count_flag > 1)
@@ -63,7 +57,7 @@ TEST(RUDPTest, Interface)
 
 TEST(RUDPTest, FlowControl)
 {
-    constexpr u64 test_packet = 200;
+    constexpr u64 test_count = 50;
 
     event_context_t context(event_strategy::epoll);
     event_loop_t loop;
@@ -78,25 +72,19 @@ TEST(RUDPTest, FlowControl)
 
     rudp1.add_connection(addr2, 0, make_timespan(5));
     rudp2.add_connection(addr1, 0, make_timespan(5));
+    rudp1.set_wndsize(addr2, 0, 5, 3);
+    rudp2.set_wndsize(addr1, 0, 3, 5);
 
     int count_flag = 0;
 
-    rudp1.run([&rudp1, &loop, &count_flag, &addr2]() {
+    rudp1.on_new_connection([&rudp1, &loop, &count_flag](rudp_connection_t conn) {
         socket_addr_t addr;
-        socket_buffer_t buffer(test_data);
-        for (int i = 0; i < test_packet; i++)
+        socket_buffer_t buffer(1280);
+        buffer.clear();
+        for (int i = 0; i < test_count; i++)
         {
             buffer.expect().origin_length();
-            GTEST_ASSERT_EQ(co::await(rudp_awrite, &rudp1, buffer, addr2, 0), io_result::ok);
-        }
-
-        for (int i = 0; i < test_packet; i++)
-        {
-            buffer.expect().origin_length();
-            int ch;
-            GTEST_ASSERT_EQ(co::await(rudp_aread, &rudp1, buffer, addr, ch), io_result::ok);
-            GTEST_ASSERT_EQ(addr, addr2);
-            GTEST_ASSERT_EQ(buffer.to_string(), test_data);
+            GTEST_ASSERT_EQ(co::await(rudp_awrite, &rudp1, conn, buffer), io_result::ok);
         }
 
         if (++count_flag > 1)
@@ -105,22 +93,13 @@ TEST(RUDPTest, FlowControl)
         }
     });
 
-    rudp2.run([&rudp2, &loop, &count_flag, &addr1]() {
-        socket_addr_t addr;
-        socket_buffer_t buffer(test_data);
-        for (int i = 0; i < test_packet; i++)
+    rudp2.on_new_connection([&rudp2, &loop, &count_flag](rudp_connection_t conn) {
+        socket_buffer_t buffer(1280);
+        for (int i = 0; i < test_count; i++)
         {
             buffer.expect().origin_length();
-            GTEST_ASSERT_EQ(co::await(rudp_awrite, &rudp2, buffer, addr1, 0), io_result::ok);
-        }
-
-        for (int i = 0; i < test_packet; i++)
-        {
-            int ch;
-            buffer.expect().origin_length();
-            GTEST_ASSERT_EQ(co::await(rudp_aread, &rudp2, buffer, addr, ch), io_result::ok);
-            GTEST_ASSERT_EQ(addr, addr1);
-            GTEST_ASSERT_EQ(buffer.to_string(), test_data);
+            GTEST_ASSERT_EQ(co::await(rudp_aread, &rudp2, conn, buffer), io_result::ok);
+            GTEST_ASSERT_EQ(buffer.get_length(), 1280);
         }
 
         if (++count_flag > 1)

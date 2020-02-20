@@ -11,7 +11,6 @@ socket_t::socket_t(int fd)
     : fd(fd)
     , current_event(0)
     , is_connection_closed(true)
-    , co(nullptr)
 {
 }
 
@@ -267,12 +266,6 @@ co::async_result_t<io_result> socket_t::aread_from(co::paramter_t &param, socket
     return ret;
 }
 
-void socket_t::sleep(microsecond_t span)
-{
-    loop->add_timer(make_timer(span, [this]() { co->resume(); }));
-    co::coroutine_t::yield();
-}
-
 socket_addr_t socket_t::local_addr()
 {
     sockaddr_in in;
@@ -301,30 +294,23 @@ void socket_t::on_event(event_context_t &context, event_type_t type)
 
     if (type & event_type::readable || type & event_type::writable || type & event_type::error)
     {
-        co->resume();
+        start();
     }
     // may be destoried here
 }
 
-void socket_t::add_event(event_type_t type)
+void socket_t::bind_context(event_context_t &context)
 {
-    assert(co::coroutine_t::current() == co);
-    loop->link(this, type);
+    auto &loop = context.select_loop();
+    loop.add_event_handler(fd, this);
+    set_loop(&loop);
 }
 
-void socket_t::remove_event(event_type_t type)
-{
-    assert(co::coroutine_t::current() == co);
-    loop->unlink(this, type);
-}
+void socket_t::unbind_context() { get_loop()->remove_event_handler(fd, this); }
 
-void socket_t::startup_coroutine(co::coroutine_t *co)
-{
-    if (this->co)
-        throw std::logic_error("coroutine has been set.");
-    this->co = co;
-    co->resume();
-}
+void socket_t::add_event(event_type_t type) { get_loop()->link(fd, type); }
+
+void socket_t::remove_event(event_type_t type) { get_loop()->unlink(fd, type); }
 
 co::async_result_t<io_result> socket_awrite(co::paramter_t &param, socket_t *socket, socket_buffer_t &buffer)
 {

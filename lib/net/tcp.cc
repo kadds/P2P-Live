@@ -212,7 +212,7 @@ server_t::~server_t() { close_server(); }
 
 void server_t::client_main(socket_t *socket)
 {
-    context->add_socket(socket);
+    socket->bind_context(*context);
     try
     {
         if (join_handler)
@@ -233,8 +233,8 @@ void server_t::wait_client()
     while (1)
     {
         auto socket = co::await(accept_from, server_socket);
-        auto co = co::coroutine_t::create(std::bind(&server_t::client_main, this, socket));
-        socket->startup_coroutine(co);
+        socket->bind_context(*context);
+        socket->run(std::bind(&server_t::client_main, this, socket));
     }
 }
 
@@ -247,9 +247,11 @@ void server_t::listen(event_context_t &context, socket_addr_t address, int max_c
 
     listen_from(bind_at(server_socket, address), max_client);
 
-    context.add_socket(server_socket).link(server_socket, net::event_type::readable);
-    auto cot = co::coroutine_t::create(std::bind(&server_t::wait_client, this));
-    server_socket->startup_coroutine(cot);
+    server_socket->bind_context(context);
+
+    server_socket->add_event(event_type::readable);
+
+    server_socket->run(std::bind(&server_t::wait_client, this));
 }
 
 void server_t::exit_client(socket_t *client)
@@ -261,35 +263,17 @@ void server_t::exit_client(socket_t *client)
     if (exit_handler)
         exit_handler(*this, client);
 
-    context->remove_socket(client);
-    if (co::coroutine_t::in_coroutine(client->get_coroutine()) && client->get_coroutine() != nullptr)
-    {
-        co::coroutine_t::yield([client]() { close_socket(client); });
-    }
-    else
-    {
-        close_socket(client);
-    }
+    client->unbind_context();
+    close_socket(client);
 }
 
 void server_t::close_server()
 {
     if (!server_socket)
         return;
-
-    context->remove_socket(server_socket);
-    if (co::coroutine_t::in_coroutine(server_socket->get_coroutine()) && server_socket->get_coroutine() != nullptr)
-    {
-        co::coroutine_t::yield([this]() {
-            close_socket(server_socket);
-            server_socket = nullptr;
-        });
-    }
-    else
-    {
-        close_socket(server_socket);
-        server_socket = nullptr;
-    }
+    server_socket->unbind_context();
+    close_socket(server_socket);
+    server_socket = nullptr;
 }
 
 server_t &server_t::on_client_join(handler_t handler)
@@ -353,10 +337,8 @@ void client_t::connect(event_context_t &context, socket_addr_t address, microsec
     this->context = &context;
     socket = new_tcp_socket();
     connect_addr = address;
-
-    context.add_socket(socket);
-    auto cot = co::coroutine_t::create(std::bind(&client_t::wait_server, this, address, timeout));
-    socket->startup_coroutine(cot);
+    socket->bind_context(context);
+    socket->run(std::bind(&client_t::wait_server, this, address, timeout));
 }
 
 client_t &client_t::on_server_connect(handler_t handler)
@@ -383,20 +365,11 @@ void client_t::close()
         return;
     if (exit_handler)
         exit_handler(*this, socket);
-    context->remove_socket(socket);
-    if (co::coroutine_t::in_coroutine(socket->get_coroutine()) && socket->get_coroutine() != nullptr)
-    {
-        co::coroutine_t::yield([this]() {
-            close_socket(socket);
-            socket = nullptr;
-        });
-    }
-    else
-    {
-        close_socket(socket);
-        socket = nullptr;
-    }
+    socket->unbind_context();
+
+    close_socket(socket);
+    socket = nullptr;
 }
-bool client_t::is_connect() const { return socket->is_connection_alive(); }
+bool client_t::is_connect() const { return socket && socket->is_connection_alive(); }
 
 } // namespace net::tcp

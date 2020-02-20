@@ -1,5 +1,5 @@
 #pragma once
-#include "event.hpp"
+#include "execute_context.hpp"
 #include "net.hpp"
 #include <boost/context/fiber.hpp>
 #include <functional>
@@ -52,7 +52,6 @@ ctx::fiber &&co_reschedule_wrapper(ctx::fiber &&sink, coroutine_t *co, std::func
 class coroutine_stop_exception
 {
 };
-
 /// coroutine
 class coroutine_t
 {
@@ -63,7 +62,9 @@ class coroutine_t
     coroutine_t *prev;
     friend ctx::fiber &&co_wrapper(ctx::fiber &&sink, coroutine_t *co);
     friend ctx::fiber &&co_reschedule_wrapper(ctx::fiber &&sink, coroutine_t *co, std::function<void()> func);
+    execute_context_t *econtext;
     bool is_stop;
+    timer_registered_t reg_timer;
 
   public:
     coroutine_t(std::function<void()> f)
@@ -88,6 +89,11 @@ class coroutine_t
     static bool in_coroutine(coroutine_t *co) { return co_cur == co; }
 
     static void remove(coroutine_t *c) { delete c; }
+
+    /// XXX: may be there is a better way to sleep in coroutine
+    execute_context_t *get_execute_context() { return econtext; }
+
+    void set_execute_context(execute_context_t *ec) { econtext = ec; }
 
     // switch to this
     void resume()
@@ -143,6 +149,8 @@ class coroutine_t
             throw std::exception();
         }
     }
+
+    void stop() { is_stop = true; }
 };
 
 class paramter_t
@@ -202,29 +210,17 @@ inline static auto await_timeout(microsecond_t span, Func func, Args &&... args)
 {
     paramter_t param;
     auto co = coroutine_t::current();
-    timer_registered_t reg_timer;
     while (1)
     {
         auto ret = func(param, std::forward<Args>(args)...);
         if (ret.is_finish())
         {
-            if (param.get_times() != 0)
-            {
-                event_loop_t::current().remove_timer(reg_timer);
-            }
             return ret();
         }
-        if (param.get_times() == 0)
-        {
-            auto timer = make_timer(span, [co, &param]() {
-                param.stop_wait();
-                /// XXX: coroutine may destroy by main thread
-                co->resume();
-            });
-            reg_timer = event_loop_t::current().add_timer(timer);
-        }
+        span = co->get_execute_context()->sleep(span);
+        if (span == 0)
+            param.stop_wait();
         param.add_times();
-        coroutine_t::yield();
     }
 }
 

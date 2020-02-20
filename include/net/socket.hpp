@@ -1,6 +1,7 @@
 #pragma once
 #include "co.hpp"
 #include "event.hpp"
+#include "execute_context.hpp"
 #include "net.hpp"
 #include "socket_addr.hpp"
 #include "socket_buffer.hpp"
@@ -9,16 +10,14 @@
 namespace net
 {
 
-class socket_t
+class socket_t : public execute_context_t, event_handler_t
 {
     int fd;
     socket_addr_t local;
     socket_addr_t remote;
     bool is_connection_closed;
 
-    co::coroutine_t *co;
     event_type_t current_event;
-    event_loop_t *loop;
 
     friend co::async_result_t<io_result> connect_to(co::paramter_t &, socket_t *, socket_addr_t);
     friend co::async_result_t<socket_t *> accept_from(co::paramter_t &, socket_t *in);
@@ -43,13 +42,10 @@ class socket_t
     co::async_result_t<io_result> awrite_to(co::paramter_t &, socket_buffer_t &buffer, socket_addr_t target);
     co::async_result_t<io_result> aread_from(co::paramter_t &, socket_buffer_t &buffer, socket_addr_t &target);
 
-    /// sleep in current coroutine
-    void sleep(microsecond_t span);
-
     socket_addr_t local_addr();
     socket_addr_t remote_addr();
 
-    void on_event(event_context_t &context, event_type_t type);
+    void on_event(event_context_t &context, event_type_t type) override;
 
     void add_event(event_type_t type);
     void remove_event(event_type_t type);
@@ -60,10 +56,8 @@ class socket_t
 
     bool is_connection_alive() const { return !is_connection_closed; }
 
-    event_loop_t &get_event_loop() { return *loop; }
-
-    void startup_coroutine(co::coroutine_t *co);
-    co::coroutine_t *get_coroutine() const { return co; }
+    void bind_context(event_context_t &context);
+    void unbind_context();
 };
 
 co::async_result_t<io_result> socket_awrite(co::paramter_t &param, socket_t *socket, socket_buffer_t &buffer);
