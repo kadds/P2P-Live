@@ -10,7 +10,7 @@
 #define MAX_AUDIO_FRAME_SIZE 192000
 
 int codec_id_Video, codec_id_Audio;     // SDL播放辨别的Video格式
-int index_Video = -1, index_Audio = -1; //解码时对应的视频音频标记（video是1，audio是0
+int index_Video = -1, index_Audio = -1; //解码时对应的视频音频标记
 int width_Video, height_Video;
 
 Uint8 *MainWindow::audio_chunk = 0;
@@ -130,7 +130,7 @@ int MainWindow::demux(char *pInputFile, char *pOutputFileName_Video, char *pOutp
     }
     std::cout << "文件流个数nb_streams:" << pAVFC->nb_streams << std::endl;
     std::cout << "平均比特率bit_rate:" << pAVFC->bit_rate << std::endl;
-    //re = avformat_find_stream_info(pAVFC, NULL); //获取更多信息
+    // re = avformat_find_stream_info(pAVFC, NULL); //获取更多信息
     for (int i = 0; i < pAVFC->nb_streams; i++)
     {
         AVStream *pAVS = pAVFC->streams[i];
@@ -208,14 +208,12 @@ int MainWindow::demux(char *pInputFile, char *pOutputFileName_Video, char *pOutp
             height_Video = pAVS->codecpar->height;
             width_Video = pAVS->codecpar->width;
 
-
-
             cout << "========视频流信息========" << endl;
             cout << "视频帧率:" << fps << "fps" << endl; //表示每秒出现多少帧
             cout << "帧高度:" << pAVS->codecpar->height << endl;
             cout << "帧宽度:" << pAVS->codecpar->width << endl;
             cout << "视频压缩编码格式:" << pAVC->name << endl;
-            cout<<"视频像素格式"<<pAVC->pix_fmts<<endl;
+            cout << "视频像素格式" << pAVC->pix_fmts << endl;
             cout << "视频总时长:" << h << "时" << m << "分" << s << "秒" << endl;
         }
 
@@ -243,12 +241,13 @@ int MainWindow::demux(char *pInputFile, char *pOutputFileName_Video, char *pOutp
      * @brief pSC_Video
      */
     SwsContext *pSC_Video = sws_alloc_context();
-    cout<<pAVCC_Video->width<<" "<<pAVCC_Video->height<<" "<<pAVCC_Video->pix_fmt<<"!";
-    pSC_Video = sws_getCachedContext(pSC_Video, pAVCC_Video->width, pAVCC_Video->height, pAVCC_Video->pix_fmt==-1?AV_PIX_FMT_YUV420P:pAVCC_Video->pix_fmt, //源
-                                     pAVCC_Video->width, pAVCC_Video->height, AV_PIX_FMT_YUV420P,              //目标
+    cout << pAVCC_Video->width << " " << pAVCC_Video->height << " " << pAVCC_Video->pix_fmt << "!";
+    pSC_Video = sws_getCachedContext(pSC_Video, pAVCC_Video->width, pAVCC_Video->height,
+                                     pAVCC_Video->pix_fmt == -1 ? AV_PIX_FMT_YUV420P : pAVCC_Video->pix_fmt, //源
+                                     pAVCC_Video->width, pAVCC_Video->height, AV_PIX_FMT_YUV420P,            //目标
                                      SWS_BICUBIC, //尺寸变化算法
                                      0, 0, 0);
-    cout<<"sws fun end\n";
+    cout << "sws fun end\n";
     /**
      * @brief pSC_Audio
      */
@@ -288,7 +287,8 @@ int MainWindow::demux(char *pInputFile, char *pOutputFileName_Video, char *pOutp
     avpicture_fill((AVPicture *)pAVF_Video_YUV, outBuffer_Video, AV_PIX_FMT_YUV420P, pAVCC_Video->width,
                    pAVCC_Video->height);
 
-    ///int outBufferSize_Audio = av_samples_get_buffer_size(NULL, outChannelLayoutNumber, outSamplesNumber, AVSF_out, 1);
+    /// int outBufferSize_Audio = av_samples_get_buffer_size(NULL, outChannelLayoutNumber, outSamplesNumber, AVSF_out,
+    /// 1);
     uint8_t *outBuffer_Audio = (uint8_t *)av_malloc(MAX_AUDIO_FRAME_SIZE * 2);
     cout << "---打开输入输出over---" << endl;
 
@@ -298,18 +298,18 @@ int MainWindow::demux(char *pInputFile, char *pOutputFileName_Video, char *pOutp
      */
     cout << "---sdl init---" << endl;
     void (*pcallback)(void *, Uint8 *, int) = &SDLAudio;
-/*
-    audios.freq = outSampleRate; //采样率
-    audios.format = AUDIO_S16SYS;
-    audios.channels = outChannelLayout;
-    audios.silence = 0; //静音
-    audios.samples = outSamplesNumber;
-    audios.callback = pcallback;
-    audios.userdata = pAVCC_Audio;
+    /*
+        audios.freq = outSampleRate; //采样率
+        audios.format = AUDIO_S16SYS;
+        audios.channels = outChannelLayout;
+        audios.silence = 0; //静音
+        audios.samples = outSamplesNumber;
+        audios.callback = pcallback;
+        audios.userdata = pAVCC_Audio;
 
-    if (SDL_OpenAudio(&audios, NULL) != 0)
-        ErrorExit("can't open audio.\n");
-*/
+        if (SDL_OpenAudio(&audios, NULL) != 0)
+            ErrorExit("can't open audio.\n");
+    */
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER)) //成功，非0
         ErrorExit("SDL init error");
     myscreen = SDL_CreateWindow("new sdl window", 0, 0, pAVCC_Video->width, pAVCC_Video->height, SDL_WINDOW_RESIZABLE);
@@ -326,13 +326,13 @@ int MainWindow::demux(char *pInputFile, char *pOutputFileName_Video, char *pOutp
         ErrorExit("SDL texture");
 
     cout << SDL_GetError();
-    ///SDL_PauseAudio(0);
+    /// SDL_PauseAudio(0);
     // pAVCC_Video->max_b_frames ;
     pAVF_Audio->repeat_pict;
     cout << "---开始解码---" << endl;
     while (av_read_frame(pAVFC, pAVP) >= 0)
     {
-cout<<"read "<<endl;
+        cout << "read " << endl;
         if (pAVP->stream_index == index_Video)
         {
             // int frameFinished=0;
