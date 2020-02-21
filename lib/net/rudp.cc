@@ -449,7 +449,11 @@ void rudp_t::set_wndsize(socket_addr_t addr, int channel, int send, int recv)
     impl->set_wndsize(addr, channel, send, recv);
 }
 
-void rudp_t::on_new_connection(new_connection_handler_t handler) { impl->on_new_connection(handler); }
+rudp_t &rudp_t::on_new_connection(new_connection_handler_t handler)
+{
+    impl->on_new_connection(handler);
+    return *this;
+}
 
 bool rudp_t::removeable(socket_addr_t addr, int channel) { return impl->removeable(addr, channel); }
 

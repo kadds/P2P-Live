@@ -25,7 +25,7 @@ class rudp_t
 
     /// return false will discard current packet
     using unknown_handler_t = std::function<bool(socket_addr_t address)>;
-    using timeout_handler_t = std::function<void(socket_addr_t)>;
+    using timeout_handler_t = std::function<void(rudp_connection_t)>;
 
   private:
     // impl idiom
@@ -56,7 +56,7 @@ class rudp_t
 
     void set_wndsize(socket_addr_t addr, int channel, int send, int recv);
 
-    void on_new_connection(new_connection_handler_t handler);
+    rudp_t &on_new_connection(new_connection_handler_t handler);
 
     void remove_connection(socket_addr_t addr, int channel);
 
