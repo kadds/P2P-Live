@@ -311,7 +311,6 @@ void tracker_server_t::udp_main(rudp_connection_t conn)
     /// NOTE: this port may be a NAT port
     request.from_udp_port = conn.address.get_port();
 
-    /// XXX: reschedule to tcp coroutine
     node_info.conn.get_socket()->start_with([tcpconn, request]() {
         tcp::package_head_t head;
         head.version = 4;
