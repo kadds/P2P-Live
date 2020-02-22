@@ -11,6 +11,7 @@ enum class connection_state
     address_in_used,
     no_resource,
     timeout,
+    secure_check_failed,
 };
 
 class net_connect_exception : public std::exception

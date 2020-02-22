@@ -54,6 +54,8 @@ void execute_context_t::run(std::function<void()> func)
     start();
 }
 
+void execute_context_t::wake_up_thread() { loop->wake_up(); }
+
 execute_context_t::execute_context_t()
     : co(nullptr)
 {

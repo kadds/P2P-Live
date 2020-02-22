@@ -69,6 +69,7 @@ enum class request_strategy : u8
 {
     random,
     min_workload,
+    edge_node,
 };
 
 namespace tracker_packet
@@ -83,6 +84,8 @@ enum
     get_nodes_respond,
     get_trackers_request,
     get_trackers_respond,
+    init_connection,
+
     peer_request,
     heartbeat = 0xFF,
 };
@@ -93,14 +96,12 @@ enum
 /// type 1  2
 struct tracker_ping_pong_t
 {
-    /// server bind port
-    /// not used now
-    u16 port;
-    /// not used now
-    u32 ip;
     u32 peer_workload;
     u32 tracker_neighbor_count;
-    using member_list_t = serialization::typelist_t<u16, u32, u32, u32>;
+    /// tcp server bind port
+    u16 port;
+    u16 udp_port;
+    using member_list_t = serialization::typelist_t<u32, u32, u16, u16>;
 };
 
 struct tracker_peer_node_t
@@ -132,6 +133,13 @@ struct get_tracker_info_respond_t
     using member_list_t = serialization::typelist_t<u16, u16, u32>;
 };
 
+struct init_connection_t
+{
+    u64 register_sid;
+    u8 key[512];
+    using member_list_t = serialization::typelist_t<u64, u8[512]>;
+};
+
 struct get_nodes_request_t
 {
     u16 max_count;
@@ -152,8 +160,7 @@ struct get_nodes_respond_t
 struct get_trackers_request_t
 {
     u16 max_count;
-    request_strategy strategy;
-    using member_list_t = serialization::typelist_t<u16, u8>;
+    using member_list_t = serialization::typelist_t<u16>;
 };
 
 struct get_trackers_respond_t
@@ -168,6 +175,7 @@ struct tracker_heartbeat_t
 {
     using member_list_t = serialization::typelist_t<>;
 };
+
 constexpr u64 conn_request_magic = 0xC0FF8888;
 struct udp_connection_request_t
 {
@@ -239,6 +247,7 @@ struct node_info_t
     microsecond_t last_ping;
     u32 workload;
     peer_node_t node;
+    u64 sid;
     tcp::connection_t conn;
 
     node_info_t()
@@ -259,16 +268,18 @@ constexpr static inline u64 node_tick_times = 2;
 class tracker_server_t
 {
   private:
-    using error_handler_t = std::function<void(tracker_server_t &, socket_t *socket, connection_state)>;
+    using error_handler_t = std::function<void(tracker_server_t &, socket_addr_t address, connection_state)>;
+    using link_handler_t = std::function<void(tracker_server_t &, socket_addr_t address)>;
 
   private:
     /// 1min
     constexpr static inline u64 tick_timespan = 60000000;
-    constexpr static inline u64 tick_times = 3;
+    constexpr static inline u64 tick_times = 2;
 
     tcp::server_t server;
     rudp_t udp;
     u16 udp_port;
+    std::string edge_key;
 
     void server_main(tcp::connection_t conn);
     void client_main(tcp::connection_t conn);
@@ -279,17 +290,32 @@ class tracker_server_t
     std::unordered_map<socket_addr_t, size_t, addr_hash_func> nodes;
     std::vector<node_info_t> node_infos;
     error_handler_t error_handler;
+    link_handler_t link_handler, unlink_handler;
 
     void update_tracker(socket_addr_t addr, tcp::connection_t conn, tracker_ping_pong_t &res);
 
   public:
     tracker_server_t(){};
+    tracker_server_t(const tracker_server_t &) = delete;
+    tracker_server_t &operator=(const tracker_server_t &) = delete;
+
+    ~tracker_server_t();
+
+    void config(std::string edge_key);
+
     void bind(event_context_t &context, socket_addr_t addr, bool reuse_addr = false);
     void link_other_tracker_server(event_context_t &context, socket_addr_t addr, microsecond_t timeout);
     tracker_server_t &on_link_error(error_handler_t handler);
+    tracker_server_t &on_link_server(link_handler_t handler);
+    tracker_server_t &on_unlink_server(link_handler_t handler);
+
     std::vector<tracker_node_t> get_trackers() const;
+
+    void close();
 };
+
 /// client under NAT or not
+/// sid == 0 is edge server
 class tracker_node_client_t
 {
   private:
@@ -297,41 +323,53 @@ class tracker_node_client_t
     using trackers_update_handler_t = std::function<void(tracker_node_client_t &, tracker_node_t *, u64)>;
     using nodes_connect_handler_t = std::function<void(tracker_node_client_t &, peer_node_t, u16 udp_port)>;
     using error_handler_t = std::function<void(tracker_node_client_t &, socket_t *, connection_state)>;
+    using disconnect_handler_t = std::function<void(tracker_node_client_t &)>;
 
   private:
     tcp::client_t client;
 
     socket_addr_t server_udp_address;
 
+    u16 client_rudp_port;
     u16 client_outer_port;
     u32 client_outer_ip;
-
-    bool wait_next_package;
 
     nodes_update_handler_t node_update_handler;
     trackers_update_handler_t tracker_update_handler;
     nodes_connect_handler_t connect_handler;
     error_handler_t error_handler;
 
-    void update_trackers(int count, request_strategy strategy);
-    void update_nodes();
     u64 sid;
-    int request_count;
-    request_strategy strategy;
-    bool request_trackers, request_nodes;
+    microsecond_t timeout;
+    bool request_trackers;
+    bool is_peer_client;
+    bool wait_next_package;
+
+    std::queue<std::tuple<int, request_strategy>> node_queue;
 
     void main(tcp::connection_t conn);
+    void update_trackers(int count);
+    void update_nodes();
+
+    socket_addr_t remote_server_address;
+
+    event_context_t *context;
+
+    std::string key;
 
   public:
-    void config(u64 sid, int max_request_count, request_strategy strategy);
-    void config_as_server(u64 sid);
+    tracker_node_client_t(){};
+    tracker_node_client_t(const tracker_node_client_t &) = delete;
+    tracker_node_client_t &operator=(const tracker_node_client_t &) = delete;
+
+    void config(bool as_peer_server, u64 sid, std::string key);
 
     void connect_server(event_context_t &context, socket_addr_t addr, microsecond_t timeout);
 
     void request_update_trackers();
     tracker_node_client_t &on_nodes_update(nodes_update_handler_t handler);
 
-    void request_update_nodes();
+    void request_update_nodes(int max_request_count, request_strategy strategy);
     tracker_node_client_t &on_trackers_update(trackers_update_handler_t handler);
 
     void request_connect_node(peer_node_t node, rudp_t &udp);
@@ -340,6 +378,10 @@ class tracker_node_client_t
     tracker_node_client_t &on_error(error_handler_t handler);
 
     socket_t *get_socket() const { return client.get_socket(); }
+
+    void close();
+
+    ~tracker_node_client_t();
 };
 
 } // namespace net::p2p

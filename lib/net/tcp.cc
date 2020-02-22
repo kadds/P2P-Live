@@ -19,7 +19,6 @@ co::async_result_t<io_result> connection_t::aread(co::paramter_t &param, socket_
 /// wait next packet and read tcp application head
 co::async_result_t<io_result> connection_t::aread_packet_head(co::paramter_t &param, package_head_t &head)
 {
-    /// XXX: there is a memory allocate in head.
     if (param.get_user_ptr() == 0) /// version none, first read
     {
         socket_buffer_t buffer((byte *)&head, sizeof(package_head_t));
@@ -39,8 +38,6 @@ co::async_result_t<io_result> connection_t::aread_packet_head(co::paramter_t &pa
         param.set_user_ptr((void *)1);
     }
     // read head
-
-    // buffer in stack
 
     socket_buffer_t buffer((byte *)&head, sizeof(package_head_t));
     int length;
@@ -212,7 +209,6 @@ server_t::~server_t() { close_server(); }
 
 void server_t::client_main(socket_t *socket)
 {
-    socket->bind_context(*context);
     try
     {
         if (join_handler)
@@ -235,11 +231,14 @@ void server_t::wait_client()
         auto socket = co::await(accept_from, server_socket);
         socket->bind_context(*context);
         socket->run(std::bind(&server_t::client_main, this, socket));
+        socket->wake_up_thread();
     }
 }
 
 void server_t::listen(event_context_t &context, socket_addr_t address, int max_client, bool reuse_addr)
 {
+    if (server_socket != nullptr)
+        return;
     this->context = &context;
     server_socket = new_tcp_socket();
     if (reuse_addr)
@@ -334,11 +333,14 @@ void client_t::wait_server(socket_addr_t address, microsecond_t timeout)
 
 void client_t::connect(event_context_t &context, socket_addr_t address, microsecond_t timeout)
 {
+    if (socket != nullptr)
+        return;
     this->context = &context;
     socket = new_tcp_socket();
     connect_addr = address;
     socket->bind_context(context);
     socket->run(std::bind(&client_t::wait_server, this, address, timeout));
+    socket->wake_up_thread();
 }
 
 client_t &client_t::on_server_connect(handler_t handler)
@@ -370,6 +372,7 @@ void client_t::close()
     close_socket(socket);
     socket = nullptr;
 }
+
 bool client_t::is_connect() const { return socket && socket->is_connection_alive(); }
 
 } // namespace net::tcp

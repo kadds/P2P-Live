@@ -32,6 +32,9 @@ class execute_context_t
     void start();
     void start_with(std::function<void()> func);
     void run(std::function<void()> func);
+
+    void wake_up_thread();
+
     execute_context_t();
     ~execute_context_t();
 };

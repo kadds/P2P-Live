@@ -25,7 +25,7 @@ class rudp_t
 
     /// return false will discard current packet
     using unknown_handler_t = std::function<bool(socket_addr_t address)>;
-    using timeout_handler_t = std::function<void(socket_addr_t)>;
+    using timeout_handler_t = std::function<void(rudp_connection_t)>;
 
   private:
     // impl idiom
@@ -51,15 +51,20 @@ class rudp_t
     void add_connection(socket_addr_t addr, int channel, microsecond_t inactive_timeout,
                         std::function<void(rudp_connection_t)> co_func);
 
-    void config(socket_addr_t addr, int channel, bool fast_mode, int level);
+    /// level 0: faster. level 1: fast, level 2: slow
+    void config(rudp_connection_t conn, int level);
 
     void set_wndsize(socket_addr_t addr, int channel, int send, int recv);
 
-    void on_new_connection(new_connection_handler_t handler);
-    /// clear remote address restrictions
+    rudp_t &on_new_connection(new_connection_handler_t handler);
+
     void remove_connection(socket_addr_t addr, int channel);
 
+    void remove_connection(rudp_connection_t conn);
+
     bool removeable(socket_addr_t addr, int channel);
+
+    bool removeable(rudp_connection_t conn);
 
     rudp_t &on_unknown_packet(unknown_handler_t handler);
 
@@ -80,6 +85,8 @@ class rudp_t
     }
 
     void close();
+
+    bool is_bind() const;
 };
 
 // wrapper functions

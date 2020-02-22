@@ -23,7 +23,11 @@ struct rudp_endpoint_t
     /// next timer
     timer_registered_t timer_reg;
     bool wait_for_io;
+    bool is_closing;
     execute_context_t econtext;
+    std::queue<socket_buffer_t> recv_queue;
+    lock::spinlock_t queue_lock;
+    lock::spinlock_t endpoint_lock;
 };
 
 struct hash_so_t
@@ -46,13 +50,18 @@ class rudp_impl_t
     microsecond_t base_time;
     socket_buffer_t recv_buffer;
 
+    lock::rw_lock_t map_lock;
+
     void set_timer(rudp_endpoint_t *ep)
     {
         auto cur = get_current_time();
-        auto next_tick_time = ikcp_check(ep->ikcp, (cur - base_time) / 1000);
-        auto time_point = next_tick_time * 1000 + base_time;
-        if (time_point < cur)
-            time_point = cur;
+        auto kcp_cur = (cur - base_time) / 1000;
+        auto next_tick_time = ikcp_check(ep->ikcp, kcp_cur);
+        if (next_tick_time < kcp_cur)
+            next_tick_time = kcp_cur;
+        auto delta = (next_tick_time - kcp_cur) * 1000;
+
+        auto time_point = delta + cur + base_time;
 
         if (ep->timer_reg.id >= 0 && ep->timer_reg.timepoint <= time_point + 5000 &&
             ep->timer_reg.timepoint >= time_point - 5000)
@@ -66,11 +75,13 @@ class rudp_impl_t
             ep->econtext.get_loop()->remove_timer(ep->timer_reg);
         }
 
-        ep->timer_reg = ep->econtext.get_loop()->add_timer(make_timer(time_point - cur, [this, ep]() {
-            ikcp_update(ep->ikcp, (get_current_time() - base_time) / 1000);
-            if (ep->wait_for_io)
-                ep->econtext.start();
-            set_timer(ep);
+        ep->timer_reg = ep->econtext.get_loop()->add_timer(make_timer(delta, [this, ep]() {
+            ep->econtext.start_with([ep, this]() {
+                update_endpoint(ep);
+                ikcp_update(ep->ikcp, (get_current_time() - base_time) / 1000);
+                set_timer(ep);
+            });
+            ep->econtext.wake_up_thread();
         }));
     }
 
@@ -93,6 +104,7 @@ class rudp_impl_t
             reuse_addr_socket(socket, true);
         socket->bind_context(context);
         socket->run(std::bind(&rudp_impl_t::rudp_server_main, this));
+        socket->wake_up_thread();
     }
 
     void bind(event_context_t &context)
@@ -102,6 +114,27 @@ class rudp_impl_t
         bind_at(socket, address);
         socket->bind_context(context);
         socket->run(std::bind(&rudp_impl_t::rudp_server_main, this));
+        socket->wake_up_thread();
+    }
+
+    void config(rudp_connection_t conn, int level)
+    {
+        auto endpoint = find(conn);
+        if (!endpoint)
+            return;
+        if (level == 0)
+        {
+            // fast mode
+            ikcp_nodelay(endpoint->ikcp, 1, 10, 2, 1);
+        }
+        else if (level == 1)
+        {
+            ikcp_nodelay(endpoint->ikcp, 1, 20, 3, 1);
+        }
+        else
+        {
+            ikcp_nodelay(endpoint->ikcp, 0, 50, 0, 0);
+        }
     }
 
     void on_unknown_connection(rudp_t::unknown_handler_t handler) { this->unknown_handler = handler; }
@@ -112,13 +145,17 @@ class rudp_impl_t
 
     rudp_endpoint_t *find(rudp_connection_t conn)
     {
+        lock::shared_lock_guard l(map_lock);
         auto it = user_map.find(conn.address);
         if (it != user_map.end())
         {
             auto it2 = it->second.find(conn.channel);
             if (it2 != it->second.end())
             {
-                return it2->second.get();
+                auto i = it2->second.get();
+                if (i->ikcp == nullptr)
+                    return nullptr;
+                return i;
             }
         }
         return nullptr;
@@ -126,13 +163,17 @@ class rudp_impl_t
 
     rudp_endpoint_t *find(socket_addr_t address, int channel)
     {
+        lock::shared_lock_guard l(map_lock);
         auto it = user_map.find(address);
         if (it != user_map.end())
         {
             auto it2 = it->second.find(channel);
             if (it2 != it->second.end())
             {
-                return it2->second.get();
+                auto i = it2->second.get();
+                if (i->ikcp == nullptr)
+                    return nullptr;
+                return i;
             }
         }
         return nullptr;
@@ -161,21 +202,46 @@ class rudp_impl_t
         endpoint->timer_reg.id = -1;
         endpoint->channel = channel;
         endpoint->wait_for_io = false;
+        endpoint->is_closing = false;
 
         ikcp_setoutput(pcb, udp_output);
         ikcp_wndsize(pcb, 128, 128);
-        // fast mode
-        ikcp_nodelay(pcb, 1, 50, 2, 1);
-        pcb->rx_minrto = 50;
-        pcb->fastresend = 1;
         auto ptr = endpoint.get();
-        /// XXX: 避免绑定到不同线程，使用同一个loop，意味着无法在多个线程间负载均衡，尝试异步读取recv to kcp
-        /// 可能解决问题
-        endpoint->econtext.set_loop(socket->get_loop());
+
+        auto &loop = context->select_loop();
+        endpoint->econtext.set_loop(&loop);
+
+        auto point = endpoint.get();
+        {
+            lock::lock_guard l(map_lock);
+            user_map[addr].emplace(channel, std::move(endpoint));
+            for (auto i = user_map.begin(); i != user_map.end();)
+            {
+                for (auto j = i->second.begin(); j != i->second.end();)
+                {
+                    if (j->second->ikcp == nullptr)
+                    {
+                        j = i->second.erase(j);
+                    }
+                    else
+                    {
+                        j++;
+                    }
+                }
+                if (i->second.empty())
+                {
+                    i = user_map.erase(i);
+                }
+                else
+                {
+                    i++;
+                }
+            }
+        }
 
         if (co_func)
         {
-            endpoint->econtext.run([this, ptr, co_func]() {
+            point->econtext.run([this, ptr, co_func]() {
                 rudp_connection_t conn;
                 conn.address = ptr->remote_address;
                 conn.channel = ptr->channel;
@@ -185,7 +251,7 @@ class rudp_impl_t
         }
         else
         {
-            endpoint->econtext.run([this, ptr]() {
+            point->econtext.run([this, ptr]() {
                 rudp_connection_t conn;
                 conn.address = ptr->remote_address;
                 conn.channel = ptr->channel;
@@ -195,7 +261,13 @@ class rudp_impl_t
             });
         }
 
-        user_map[addr].emplace(channel, std::move(endpoint));
+        loop.wake_up();
+
+        // fast mode
+        rudp_connection_t conn;
+        conn.address = addr;
+        conn.channel = channel;
+        config(conn, 1);
     }
 
     void set_wndsize(socket_addr_t addr, int channel, int send, int recv)
@@ -220,9 +292,7 @@ class rudp_impl_t
         auto endpoint = find(addr, channel);
         if (endpoint == nullptr)
             return;
-        auto ikcp = endpoint->ikcp;
-        aclose_connection(endpoint);
-        ikcp_release(ikcp);
+        aclose_connection(endpoint, false);
     }
 
     co::async_result_t<io_result> awrite(co::paramter_t &param, rudp_connection_t conn, socket_buffer_t &buffer)
@@ -249,9 +319,53 @@ class rudp_impl_t
         return {};
     }
 
+    bool check_unknown(socket_addr_t target, int conv, rudp_endpoint_t *&endpoint)
+    {
+        std::unordered_map<socket_addr_t, std::unordered_map<int, std::unique_ptr<rudp_endpoint_t>>>::iterator it;
+
+        {
+            lock::shared_lock_guard l(map_lock);
+
+            it = user_map.find(target);
+            if (it != user_map.end())
+            {
+                auto it2 = it->second.find(conv);
+                if (it2 == it->second.end())
+                    return false;
+                endpoint = it2->second.get();
+                return true;
+            }
+        }
+
+        if (unknown_handler)
+        {
+            if (!unknown_handler(target))
+            {
+                // discard packet
+                return false;
+            }
+            {
+                lock::shared_lock_guard l(map_lock);
+                it = user_map.find(target);
+                if (it == user_map.end())
+                {
+                    // discard packet !
+                    return false;
+                }
+            }
+        }
+
+        auto it2 = it->second.find(conv);
+        if (it2 == it->second.end())
+            return false;
+        endpoint = it2->second.get();
+        return true;
+    }
+
     void rudp_server_main()
     {
         socket_addr_t target;
+        rudp_endpoint_t *endpoint;
         while (1)
         {
             recv_buffer.expect().origin_length();
@@ -260,39 +374,47 @@ class rudp_impl_t
                 socket->sleep(1000);
                 continue;
             }
-            auto it = user_map.find(target);
-            if (it == user_map.end())
-            {
-                if (unknown_handler)
-                {
-                    if (!unknown_handler(target))
-                    {
-                        // discard packet
-                        continue;
-                    }
-                    it = user_map.find(target);
-                    if (it == user_map.end())
-                    {
-                        // discard packet !
-                        continue;
-                    }
-                }
-            }
             int conv = ikcp_getconv(recv_buffer.get());
-            auto it2 = it->second.find(conv);
-            if (it2 == it->second.end())
-                continue; // this channel isn't exist. ignore
-            auto endpoint = it2->second.get();
-            endpoint->last_alive = get_current_time();
-            // udp -> ikcp
-            ikcp_input(endpoint->ikcp, (char *)recv_buffer.get(), recv_buffer.get_length());
-            if (ikcp_peeksize(endpoint->ikcp) >= 0)
+
+            if (!check_unknown(target, conv, endpoint))
             {
-                if (endpoint->wait_for_io)
-                    endpoint->econtext.start();
+                continue;
             }
 
-            recv_buffer.expect().origin_length();
+            endpoint->last_alive = get_current_time();
+            // udp -> ikcp
+            {
+                lock::lock_guard l(endpoint->queue_lock);
+                endpoint->recv_queue.push(std::move(recv_buffer));
+            }
+            endpoint->econtext.start();
+            endpoint->econtext.get_loop()->wake_up();
+
+            recv_buffer = socket_buffer_t(1472);
+        }
+    }
+
+    void update_endpoint(rudp_endpoint_t *endpoint)
+    {
+        while (!endpoint->recv_queue.empty())
+        {
+            socket_buffer_t recv_buffer;
+            {
+                lock::lock_guard l(endpoint->queue_lock);
+                recv_buffer = endpoint->recv_queue.front();
+            }
+
+            if (ikcp_input(endpoint->ikcp, (char *)recv_buffer.get(), recv_buffer.get_length()) >= 0)
+            {
+                {
+                    lock::lock_guard l(endpoint->queue_lock);
+                    endpoint->recv_queue.pop();
+                }
+            }
+            else
+            {
+                break;
+            }
         }
     }
 
@@ -301,6 +423,8 @@ class rudp_impl_t
         auto endpoint = find(conn);
         if (endpoint == nullptr)
             return io_result::failed;
+        endpoint->wait_for_io = true;
+        update_endpoint(endpoint);
 
         if (param.is_stop()) /// stop timeout
         {
@@ -311,61 +435,87 @@ class rudp_impl_t
 
         // data <- KCP <- UDP
         auto len = ikcp_recv(endpoint->ikcp, (char *)buffer.get(), buffer.get_length());
+        set_timer(endpoint);
         if (len >= 0)
         {
-            set_timer(endpoint);
             buffer.walk_step(len);
             buffer.finish_walk();
             endpoint->wait_for_io = false;
             return io_result::ok;
         }
-        endpoint->wait_for_io = true;
+
         return {};
     }
 
     socket_t *get_socket() const { return socket; }
 
-    void aclose_connection(rudp_endpoint_t *endpoint)
+    void aclose_connection(rudp_endpoint_t *endpoint, bool fast_close)
     {
-        while (1)
+        if (endpoint->is_closing)
+            return;
+        endpoint->is_closing = true;
+
+        if (!fast_close)
         {
-            if (ikcp_waitsnd(endpoint->ikcp) <= 0)
-                break;
-            endpoint->wait_for_io = true;
-            endpoint->econtext.stop();
+            while (1)
+            {
+                if (ikcp_waitsnd(endpoint->ikcp) <= 0)
+                    break;
+                set_timer(endpoint);
+                endpoint->wait_for_io = true;
+                endpoint->econtext.stop();
+            }
         }
+        lock::lock_guard l(endpoint->endpoint_lock);
+
+        ikcp_release(endpoint->ikcp);
+        endpoint->ikcp = nullptr;
+
         if (endpoint->timer_reg.id >= 0)
         {
             endpoint->econtext.get_loop()->remove_timer(endpoint->timer_reg);
             endpoint->timer_reg.id = -1;
         }
-
-        auto it = user_map.find(endpoint->remote_address);
-        if (it != user_map.end())
-        {
-            auto it2 = it->second.find(endpoint->channel);
-            if (it2 != it->second.end())
-            {
-                it->second.erase(it2);
-            }
-            if (it->second.empty())
-            {
-                user_map.erase(it);
-            }
-        }
     }
 
     void close_all_peer()
     {
-        auto ts = (get_current_time() - base_time) / 1000;
+        lock::lock_guard l(map_lock);
         for (auto &it : user_map)
         {
             for (auto &it2 : it.second)
             {
+                auto endpoint = it2.second.get();
                 /// don't wait send buffer
-                ikcp_release(it2.second->ikcp);
+                lock::lock_guard l(endpoint->endpoint_lock);
+
+                if (endpoint->ikcp != nullptr)
+                {
+                    if (endpoint->timer_reg.id >= 0)
+                    {
+                        if (endpoint->econtext.get_loop() == &event_loop_t::current())
+                        {
+                            endpoint->econtext.get_loop()->remove_timer(endpoint->timer_reg);
+                        }
+                        else
+                        {
+                            lock::spinlock_t lock;
+                            lock.lock();
+                            /// Wait other thread
+                            endpoint->econtext.start_with([endpoint, &lock]() {
+                                endpoint->econtext.get_loop()->remove_timer(endpoint->timer_reg);
+                                lock.unlock();
+                            });
+                            endpoint->timer_reg.id = -1;
+                            lock.lock();
+                        }
+                    }
+                    ikcp_release(endpoint->ikcp);
+                    endpoint->ikcp = nullptr;
+                }
             }
         }
+        user_map.clear();
     }
 
     void close()
@@ -378,6 +528,8 @@ class rudp_impl_t
         socket = nullptr;
     }
 
+    bool is_bind() const { return socket != nullptr; }
+
     ~rudp_impl_t() { close(); }
 };
 
@@ -386,7 +538,6 @@ int udp_output(const char *buf, int len, ikcpcb *kcp, void *user)
     rudp_endpoint_t *endpoint = (rudp_endpoint_t *)user;
     socket_buffer_t buffer((byte *)(buf), len);
     buffer.expect().origin_length();
-    endpoint->last_alive = get_current_time();
     // output data to kernel, sendto udp will return immediately forever.
     // so there is no need to switch to socket coroutine.
     co::await(socket_awrite_to, endpoint->impl->socket, buffer, endpoint->remote_address);
@@ -421,16 +572,24 @@ void rudp_t::add_connection(socket_addr_t addr, int channel, microsecond_t inact
     impl->add_connection(addr, channel, inactive_timeout, co_func);
 }
 
+void rudp_t::config(rudp_connection_t conn, int level) { impl->config(conn, level); }
+
 void rudp_t::set_wndsize(socket_addr_t addr, int channel, int send, int recv)
 {
     impl->set_wndsize(addr, channel, send, recv);
 }
 
-void rudp_t::on_new_connection(new_connection_handler_t handler) { impl->on_new_connection(handler); }
+rudp_t &rudp_t::on_new_connection(new_connection_handler_t handler)
+{
+    impl->on_new_connection(handler);
+    return *this;
+}
 
 bool rudp_t::removeable(socket_addr_t addr, int channel) { return impl->removeable(addr, channel); }
 
 void rudp_t::remove_connection(socket_addr_t addr, int channel) { impl->remove_connection(addr, channel); }
+
+void rudp_t::remove_connection(rudp_connection_t conn) { impl->remove_connection(conn.address, conn.channel); }
 
 rudp_t &rudp_t::on_unknown_packet(unknown_handler_t handler)
 {
@@ -451,6 +610,8 @@ void rudp_t::run_at(rudp_connection_t conn, std::function<void()> func) { impl->
 void rudp_t::close_all_remote() { impl->close_all_peer(); }
 
 void rudp_t::close() { impl->close(); }
+
+bool rudp_t::is_bind() const { return impl->is_bind(); }
 
 /// wrappers -----------------------
 
