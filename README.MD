@@ -54,6 +54,7 @@ Ensure that the following packages are installed:
 * [GTest](https://github.com/google/googletest)  
 * [GLog](https://github.com/google/glog)  
 * [FFmpeg](https://ffmpeg.org)
+* [gflags](https://github.com/gflags/gflags)
 
 ## Maintainers
 [@Kadds](https://github.com/Kadds).  

@@ -31,6 +31,7 @@ inline constexpr int p2p_tracker_tcp_port = 2768;
 inline constexpr int p2p_tracker_rudp_port = 2769;
 
 void init_lib();
+void uninit_lib();
 enum io_result
 {
     ok,
