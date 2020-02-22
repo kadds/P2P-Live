@@ -1,5 +1,6 @@
 #pragma once
 #include "execute_dispatcher.hpp"
+#include "lock.hpp"
 #include "net.hpp"
 #include "timer.hpp"
 #include <functional>
@@ -74,6 +75,7 @@ class event_handler_t
 using event_handle_map_t = std::unordered_map<handle_t, event_handler_t *>;
 using socket_event_loop_map_t = std::unordered_map<handle_t, event_loop_t *>;
 
+class event_fd_handler_t;
 /// event loop
 /// a loop pre thread
 /// all event is generate by demultiplexer. event loop just fetch event and distribute event run into event coroutine.
@@ -88,11 +90,14 @@ class event_loop_t
     event_context_t *context;
     std::unique_ptr<time_manager_t> time_manager;
     execute_thread_dispatcher_t dispatcher;
+    lock::spinlock_t lock;
+
+    std::unique_ptr<event_fd_handler_t> wake_up_event_handler;
 
   private:
     void add_socket(socket_t *socket_t);
     void remove_socket(socket_t *socket_t);
-    void set_demuxer(event_demultiplexer *demuxer) { this->demuxer = demuxer; }
+    void set_demuxer(event_demultiplexer *demuxer);
     void set_context(event_context_t *context) { this->context = context; }
 
     event_demultiplexer *get_demuxer() const { return demuxer; }
@@ -120,6 +125,8 @@ class event_loop_t
     execute_thread_dispatcher_t &get_dispatcher();
 
     static event_loop_t &current();
+
+    void wake_up();
 };
 
 /// event context
@@ -142,6 +149,7 @@ class event_context_t
 
     void add_event_loop(event_loop_t *loop);
     void remove_event_loop(event_loop_t *loop);
+    void exit_all_loop(int code);
 };
 
 } // namespace net

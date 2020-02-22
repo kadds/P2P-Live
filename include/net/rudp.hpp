@@ -85,6 +85,8 @@ class rudp_t
     }
 
     void close();
+
+    bool is_bind() const;
 };
 
 // wrapper functions

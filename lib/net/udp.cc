@@ -19,6 +19,7 @@ void server_t::run(std::function<void()> func)
         func();
         close();
     });
+    socket->wake_up_thread();
 }
 
 server_t::~server_t() { close(); }
@@ -54,6 +55,7 @@ void client_t::run(std::function<void()> func)
         func();
         close();
     });
+    socket->wake_up_thread();
 }
 
 socket_addr_t client_t::get_address() const { return connect_addr; }

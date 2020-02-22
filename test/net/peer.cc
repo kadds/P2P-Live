@@ -119,6 +119,7 @@ TEST(PeerTest, TrackerPingPong)
     for (auto i = 0; i < test_count; i++)
     {
         addrs[i] = socket_addr_t("127.0.0.1", 2500 + i);
+        servers[i].config("");
         servers[i].bind(context, addrs[i], true);
     }
 
@@ -166,7 +167,7 @@ TEST(PeerTest, TrackerNode)
     std::unique_ptr<tracker_node_client_t[]> tclients = std::make_unique<tracker_node_client_t[]>(test_count);
     for (int i = 0; i < test_count; i++)
     {
-        tclients[i].config(1, 30, p2p::request_strategy::random);
+        tclients[i].config(true, 1, "");
         tclients[i].connect_server(context, taddrs1, make_timespan_full());
         tclients[i].on_nodes_update([](tracker_node_client_t &client, peer_node_t *nodes, u64 count) {
             GTEST_ASSERT_EQ(count, test_count - 1);
@@ -181,7 +182,7 @@ TEST(PeerTest, TrackerNode)
     loop.add_timer(make_timer(make_timespan(1), [&tclients]() {
         for (int i = 0; i < test_count; i++)
         {
-            tclients[i].request_update_nodes();
+            tclients[i].request_update_nodes(1000, request_strategy::random);
             tclients[i].request_update_trackers();
         }
     }));
@@ -200,7 +201,7 @@ void static peer_main(event_context_t &ctx, socket_addr_t taddr, tracker_node_cl
                       std::unordered_map<socket_addr_t, peer_info_t *, peer_hash_func_t> &remote_peers)
 {
     peer.bind(ctx);
-    client.config(1, 30, p2p::request_strategy::random);
+    client.config(true, 30, "");
     client.connect_server(ctx, taddr, make_timespan_full());
 
     client
@@ -235,6 +236,8 @@ TEST(PeerTest, NATSend)
 
     tracker_server_t tserver1;
     socket_addr_t taddrs1("127.0.0.1", 2558);
+    tserver1.config("");
+
     tserver1.bind(context, taddrs1, true);
 
     tracker_node_client_t client;
@@ -250,7 +253,8 @@ TEST(PeerTest, NATSend)
     peer_main(context, taddrs1, client, peer, flags, loop, remote_peers);
     peer_main(context, taddrs1, client2, peer2, flags, loop, remote_peers2);
 
-    loop.add_timer(make_timer(net::make_timespan(0, 500), [&client]() { client.request_update_nodes(); }));
+    loop.add_timer(make_timer(net::make_timespan(0, 500),
+                              [&client]() { client.request_update_nodes(10, request_strategy::random); }));
 
     loop.add_timer(make_timer(net::make_timespan(3), [&loop]() { loop.exit(0); }));
     loop.run();

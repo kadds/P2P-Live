@@ -151,3 +151,80 @@ TEST(TCPTest, TCPTimeout)
     }));
     loop.run();
 }
+
+static void thread_main(event_context_t *context)
+{
+    event_loop_t loop;
+    context->add_event_loop(&loop);
+    loop.run();
+    context->remove_event_loop(&loop);
+}
+
+static void client_main(tcp::client_t &client, event_context_t *context, net::socket_addr_t test_addr,
+                        std::atomic_int &ref)
+{
+    client
+        .on_server_connect([](tcp::client_t &c, tcp::connection_t conn) {
+            socket_buffer_t buffer(test_data);
+            buffer.expect().origin_length();
+            GTEST_ASSERT_EQ(co::await(tcp::conn_awrite, conn, buffer), io_result::ok);
+            buffer.expect().origin_length();
+            GTEST_ASSERT_EQ(co::await(tcp::conn_aread, conn, buffer), io_result::ok);
+            GTEST_ASSERT_EQ(buffer.to_string(), test_data);
+        })
+        .on_server_disconnect([context, &ref](tcp::client_t &c, tcp::connection_t conn) {
+            if (--ref <= 0)
+                context->exit_all_loop(0);
+        });
+
+    client.connect(*context, test_addr, net::make_timespan_full());
+}
+
+TEST(TCPTest, MultiThreadTest)
+{
+    socket_addr_t test_addr("127.0.0.1", 2129);
+    event_context_t ctx(event_strategy::epoll);
+    event_loop_t loop;
+    ctx.add_event_loop(&loop);
+    tcp::server_t server;
+
+    server.on_client_join([](tcp::server_t &s, tcp::connection_t conn) {
+        socket_buffer_t buffer(test_data.size());
+        buffer.expect().origin_length();
+        GTEST_ASSERT_EQ(co::await(tcp::conn_aread, conn, buffer), io_result::ok);
+
+        GTEST_ASSERT_EQ(buffer.to_string(), test_data);
+        buffer.expect().origin_length();
+        GTEST_ASSERT_EQ(co::await(tcp::conn_awrite, conn, buffer), io_result::ok);
+    });
+    server.listen(ctx, test_addr, 10, true);
+    constexpr int threadsc = 4;
+    constexpr int counts = 20;
+
+    tcp::client_t clients[counts];
+    std::atomic_int ref = counts;
+
+    for (auto &c : clients)
+    {
+        client_main(c, &ctx, test_addr, ref);
+    }
+
+    std::unique_ptr<std::thread> threads[threadsc];
+
+    for (auto i = 0; i < threadsc; i++)
+    {
+        threads[i] = std::make_unique<std::thread>(std::bind(&thread_main, &ctx));
+    }
+
+    loop.add_timer(make_timer(make_timespan(300), [&ctx]() {
+        ctx.exit_all_loop(-1);
+        std::string str = "timeout";
+        GTEST_ASSERT_EQ(str, "");
+    }));
+    loop.run();
+
+    for (auto i = 0; i < threadsc; i++)
+    {
+        threads[i]->join();
+    }
+}

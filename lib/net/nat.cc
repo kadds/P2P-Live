@@ -33,7 +33,7 @@ void nat_server_t::bind(event_context_t &ctx, socket_addr_t server_addr, bool re
     rudp.on_new_connection([this](rudp_connection_t conn) {
         socket_buffer_t buffer(rudp.get_mtu());
         buffer.expect().origin_length();
-        co::await(rudp_aread, conn, buffer);
+        co::await(rudp_aread, &rudp, conn, buffer);
     });
 }
 
@@ -57,12 +57,12 @@ void net_detector_t::get_nat_type(event_context_t &ctx, socket_addr_t server, ha
                 socket_buffer_t buffer((byte *)&request, sizeof(request));
                 buffer.expect().origin_length();
                 endian::cast_inplace(request, buffer);
-                co::await(rudp_awrite, conn, buffer);
+                co::await(rudp_awrite, &rudp, conn, buffer);
             }
 
             socket_buffer_t buffer(rudp.get_mtu());
             buffer.expect().origin_length();
-            co::await(rudp_aread, conn, buffer);
+            co::await(rudp_aread, &rudp, conn, buffer);
             is_do_request = false;
 
             if (handler)

@@ -7,15 +7,30 @@
 #include <algorithm>
 #include <iostream>
 #include <signal.h>
+#include <sys/eventfd.h>
 
 namespace net
 {
-event_context_t::event_context_t(event_strategy strategy)
-    : strategy(strategy)
-{
-}
-
 thread_local event_loop_t *thread_in_loop;
+
+class event_fd_handler_t : public event_handler_t
+{
+    int fd;
+
+  public:
+    event_fd_handler_t() { fd = eventfd(1, 0); }
+    ~event_fd_handler_t() { close(fd); }
+
+    int get_fd() const { return fd; }
+
+    void on_event(event_context_t &, event_type_t type) override
+    {
+        eventfd_t vl;
+        eventfd_read(fd, &vl);
+    }
+
+    void write() const { eventfd_write(fd, 1); }
+};
 
 event_loop_t::event_loop_t()
     : is_exit(false)
@@ -35,12 +50,27 @@ event_loop_t::event_loop_t(std::unique_ptr<time_manager_t> time_manager)
 
 event_loop_t::~event_loop_t() { thread_in_loop = nullptr; }
 
-void event_loop_t::add_event_handler(handle_t handle, event_handler_t *handler) { event_map[handle] = handler; }
+void event_loop_t::set_demuxer(event_demultiplexer *demuxer)
+{
+    this->demuxer = demuxer;
+    wake_up_event_handler = std::make_unique<event_fd_handler_t>();
+    auto fd = wake_up_event_handler->get_fd();
+    add_event_handler(fd, wake_up_event_handler.get());
+
+    demuxer->add(fd, event_type::readable);
+}
+
+void event_loop_t::add_event_handler(handle_t handle, event_handler_t *handler)
+{
+    lock::lock_guard g(lock);
+    event_map[handle] = handler;
+}
 
 void event_loop_t::remove_event_handler(handle_t handle, event_handler_t *handler)
 {
     unlink(handle, event_type::error | event_type::writable | event_type::readable);
 
+    lock::lock_guard g(lock);
     auto it = event_map.find(handle);
     if (it != event_map.end())
         event_map.erase(it);
@@ -79,17 +109,22 @@ int event_loop_t::run()
             timeout = 0;
 
         if (is_exit)
-            return exit_code;
+            break;
 
         auto handle = demuxer->select(&type, &timeout);
         if (handle != 0)
         {
-            auto ev_it = event_map.find(handle);
-            if (ev_it != event_map.end())
+            event_handle_map_t::iterator ev_it;
             {
-                auto handler = ev_it->second;
-                handler->on_event(*context, type);
+                lock::lock_guard g(lock);
+                ev_it = event_map.find(handle);
+                if (ev_it == event_map.end())
+                {
+                    continue;
+                }
             }
+            auto handler = ev_it->second;
+            handler->on_event(*context, type);
         }
         dispatcher.dispatch();
     }
@@ -100,6 +135,14 @@ void event_loop_t::exit(int code)
 {
     exit_code = code;
     is_exit = true;
+    wake_up();
+}
+
+void event_loop_t::wake_up()
+{
+    if (this == thread_in_loop)
+        return;
+    wake_up_event_handler->write();
 }
 
 int event_loop_t::load_factor() { return event_map.size(); }
@@ -139,6 +182,11 @@ event_loop_t &event_context_t::select_loop()
     return *min_load_loop;
 }
 
+event_context_t::event_context_t(event_strategy strategy)
+    : strategy(strategy)
+{
+}
+
 void event_context_t::add_event_loop(event_loop_t *loop)
 {
     std::unique_lock<std::shared_mutex> lock(loop_mutex);
@@ -168,6 +216,14 @@ void event_context_t::remove_event_loop(event_loop_t *loop)
     {
         delete loop->get_demuxer();
         loops.erase(it);
+    }
+}
+
+void event_context_t::exit_all_loop(int code)
+{
+    for (auto &loop : loops)
+    {
+        loop->exit(code);
     }
 }
 

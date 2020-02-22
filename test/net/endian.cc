@@ -35,14 +35,14 @@ TEST(EndianTest, Test)
     data2.tag = 1;
     data2.tag2 = 384;
     data2.version = 2048;
-    data2.version2 = 0x8040201008040201UL;
+    data2.version2 = 0x8040201008040201ULL;
     memcpy(&data.header, &data2, sizeof(data2));
     net::endian::cast(data2);
 
     GTEST_ASSERT_EQ(data2.tag, 1);
     GTEST_ASSERT_EQ(data2.tag2, 32769);
     GTEST_ASSERT_EQ(data2.version, 524288);
-    GTEST_ASSERT_EQ(data2.version2, 0x102040810204080UL);
+    GTEST_ASSERT_EQ(data2.version2, 0x102040810204080ULL);
     /// nest struct
     data.head = 2064;
     data.tail = -8000;
@@ -59,7 +59,7 @@ TEST(EndianTest, Test)
     GTEST_ASSERT_EQ(data.header.tag, 1);
     GTEST_ASSERT_EQ(data.header.tag2, 32769);
     GTEST_ASSERT_EQ(data.header.version, 524288);
-    GTEST_ASSERT_EQ(data.header.version2, 0x102040810204080UL);
+    GTEST_ASSERT_EQ(data.header.version2, 0x102040810204080ULL);
     GTEST_ASSERT_EQ(data.head, 4104);
     GTEST_ASSERT_EQ(data.tail, -16160);
     GTEST_ASSERT_EQ(data.data[0], 1);

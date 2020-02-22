@@ -98,15 +98,20 @@ class coroutine_t
     // switch to this
     void resume()
     {
+        if (is_stop)
+            return;
         prev = co_cur;
 
         co_cur = this;
+
         context = std::move(context).resume();
     }
 
     // switch to this and call func
     void resume_with(std::function<void()> func)
     {
+        if (is_stop)
+            return;
         prev = co_cur;
 
         co_cur = this;

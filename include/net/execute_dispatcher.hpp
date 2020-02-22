@@ -1,4 +1,5 @@
 #pragma once
+#include "lock.hpp"
 #include <functional>
 #include <queue>
 #include <tuple>
@@ -11,6 +12,8 @@ class execute_thread_dispatcher_t
 {
     std::queue<std::tuple<execute_context_t *, std::function<void()>>> co_wait_for_resume;
     std::unordered_set<execute_context_t *> cancel_contexts;
+    lock::spinlock_t lock;
+    lock::spinlock_t cancel_lock;
 
   public:
     void dispatch();

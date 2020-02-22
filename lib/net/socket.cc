@@ -302,8 +302,8 @@ void socket_t::on_event(event_context_t &context, event_type_t type)
 void socket_t::bind_context(event_context_t &context)
 {
     auto &loop = context.select_loop();
-    loop.add_event_handler(fd, this);
     set_loop(&loop);
+    loop.add_event_handler(fd, this);
 }
 
 void socket_t::unbind_context() { get_loop()->remove_event_handler(fd, this); }
