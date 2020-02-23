@@ -7,7 +7,7 @@
 #define PIXEL_HEIGHT 180
 #define BPP 12
 
-#define MAX_AUDIO_FRAME_SIZE 192000
+#define MAX_AUDIO_FRAME_SIZE 176400
 
 int codec_id_Video, codec_id_Audio;     // SDL播放辨别的Video格式
 int index_Video = -1, index_Audio = -1; //解码时对应的视频音频标记
@@ -38,8 +38,8 @@ MainWindow::MainWindow(QWidget *parent)
     // this->setWindowTitle("P2P Live");
     // SDL_CreateThread(&sdl_event,"123",NULL);
 
-    show_dshow_device();
-    demux("/dev/video0", "outvideo.yuv", "outaudio.pcm");
+    // show_dshow_device();
+    demux("./test2.mp4", "outvideo.yuv", "outaudio.pcm");
     // SDL();
     // RGBToYUV(320,568);
     std::cout << "程序正常运行" << std::endl;
@@ -123,6 +123,7 @@ int MainWindow::demux(char *pInputFile, char *pOutputFileName_Video, char *pOutp
     // av_register_all();//旧版本函数已弃用
     // avcodec_register_all();//旧版本函数已弃用
     int re = avformat_open_input(&pAVFC, pInputFile, 0, 0);
+    cout << re;
     if (re < 0)
     {
         ErrorExit("input file open error");
@@ -251,7 +252,7 @@ int MainWindow::demux(char *pInputFile, char *pOutputFileName_Video, char *pOutp
     /**
      * @brief pSC_Audio
      */
-    /*
+
     cout << "---开始分配音频上下文---" << endl;
     SwrContext *pSC_Audio = swr_alloc();
     //分配参数
@@ -259,16 +260,18 @@ int MainWindow::demux(char *pInputFile, char *pOutputFileName_Video, char *pOutp
     AVSampleFormat AVSF_in = pAVCC_Audio->sample_fmt;
     int inSampleRate = pAVCC_Audio->sample_rate;
     int outSampleRate = pAVCC_Audio->sample_rate;
-    int outSamplesNumber = pAVCC_Audio->frame_size; //假定输出=输入一帧数据量
+    int outSamplesNumber = pAVCC_Audio->frame_size; //假定输出=输入一帧数据量//
+
     int inChannelLayout = av_get_default_channel_layout(pAVCC_Audio->channels);
 
     uint64_t outChannelLayout = AV_CH_FRONT_LEFT; //输出通道数
     int outChannelLayoutNumber = av_get_channel_layout_nb_channels(outChannelLayout);
-    cout << outChannelLayout << "---" << inChannelLayout << "---" << outChannelLayout << endl;
+    cout << outChannelLayout << "---"
+         << "---" << outChannelLayoutNumber << endl;
     pSC_Audio = swr_alloc_set_opts(pSC_Audio, 1, AVSF_out, outSampleRate, 1, AVSF_in, inSampleRate, 0, NULL);
 
     swr_init(pSC_Audio);
-*/
+
     cout << "---音频上下文over---" << endl;
     /**
      * @brief outBuffer_Video
@@ -287,8 +290,7 @@ int MainWindow::demux(char *pInputFile, char *pOutputFileName_Video, char *pOutp
     avpicture_fill((AVPicture *)pAVF_Video_YUV, outBuffer_Video, AV_PIX_FMT_YUV420P, pAVCC_Video->width,
                    pAVCC_Video->height);
 
-    /// int outBufferSize_Audio = av_samples_get_buffer_size(NULL, outChannelLayoutNumber, outSamplesNumber, AVSF_out,
-    /// 1);
+    int outBufferSize_Audio = av_samples_get_buffer_size(NULL, outChannelLayoutNumber, outSamplesNumber, AVSF_out, 1);
     uint8_t *outBuffer_Audio = (uint8_t *)av_malloc(MAX_AUDIO_FRAME_SIZE * 2);
     cout << "---打开输入输出over---" << endl;
 
@@ -298,18 +300,18 @@ int MainWindow::demux(char *pInputFile, char *pOutputFileName_Video, char *pOutp
      */
     cout << "---sdl init---" << endl;
     void (*pcallback)(void *, Uint8 *, int) = &SDLAudio;
-    /*
-        audios.freq = outSampleRate; //采样率
-        audios.format = AUDIO_S16SYS;
-        audios.channels = outChannelLayout;
-        audios.silence = 0; //静音
-        audios.samples = outSamplesNumber;
-        audios.callback = pcallback;
-        audios.userdata = pAVCC_Audio;
 
-        if (SDL_OpenAudio(&audios, NULL) != 0)
-            ErrorExit("can't open audio.\n");
-    */
+    audios.freq = outSampleRate; //采样率
+    audios.format = AUDIO_S16SYS;
+    audios.channels = outChannelLayout;
+    audios.silence = 0; //静音
+    audios.samples = outSamplesNumber;
+    audios.callback = pcallback;
+    audios.userdata = pAVCC_Audio;
+
+    if (SDL_OpenAudio(&audios, NULL) != 0)
+        ErrorExit("can't open audio.\n");
+
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER)) //成功，非0
         ErrorExit("SDL init error");
     myscreen = SDL_CreateWindow("new sdl window", 0, 0, pAVCC_Video->width, pAVCC_Video->height, SDL_WINDOW_RESIZABLE);
@@ -326,13 +328,12 @@ int MainWindow::demux(char *pInputFile, char *pOutputFileName_Video, char *pOutp
         ErrorExit("SDL texture");
 
     cout << SDL_GetError();
-    /// SDL_PauseAudio(0);
+    SDL_PauseAudio(0);
     // pAVCC_Video->max_b_frames ;
     pAVF_Audio->repeat_pict;
     cout << "---开始解码---" << endl;
     while (av_read_frame(pAVFC, pAVP) >= 0)
     {
-        cout << "read " << endl;
         if (pAVP->stream_index == index_Video)
         {
             // int frameFinished=0;
@@ -353,34 +354,42 @@ int MainWindow::demux(char *pInputFile, char *pOutputFileName_Video, char *pOutp
 
                 SDL(pAVF_Video_YUV->data[0], pAVF_Video_YUV->data[1], pAVF_Video_YUV->data[2], pAVCC_Video->width,
                     pAVCC_Video->height, fps);
+
                 av_packet_unref(pAVP);
             }
             cout << endl;
         }
-        /*else if (pAVP->stream_index == index_Audio)
+        else if (pAVP->stream_index == index_Audio)
         {
 
             re = avcodec_send_packet(pAVCC_Audio, pAVP); // re==0:success
 
             re = avcodec_receive_frame(pAVCC_Audio, pAVF_Audio); // re==0:success
-            cout << "压缩数据 dts:" << pAVP->dts << " ";
-            cout << " pts:" << pAVP->pts << " ";
 
-            cout << "| 解压数据pts:" << pAVF_Audio->pts << " " << endl;
             re = swr_convert(pSC_Audio, &outBuffer_Audio, MAX_AUDIO_FRAME_SIZE, (const uint8_t **)pAVF_Audio->data,
                              pAVF_Audio->nb_samples);
             outBufferSize_Audio = re * outChannelLayoutNumber * av_get_bytes_per_sample(AVSF_out);
 
+            cout << "Frame->采样率" << pAVF_Audio->nb_samples << endl;
+            cout << "采样率 输出声道数 每字节数" << re << " " << outChannelLayoutNumber << " "
+                 << av_get_bytes_per_sample(AVSF_out) << endl;
+
             fwrite(outBuffer_Audio, 1, outBufferSize_Audio, pOutputFile_Audio);
-            while (audio_len > 0) // Wait until finish
-                SDL_Delay(1);
+
             // Set audio buffer (PCM data)
             audio_chunk = (Uint8 *)outBuffer_Audio;
             // Audio buffer length
             audio_len = outBufferSize_Audio;
             audio_pos = audio_chunk;
+            // cout << "demux函数" << pthread_self() << flush << endl;
+
+            while (audio_len > 0)
+            { // Wait until finish
+                SDL_Delay(1);
+            }
+            // cout << "demux函数延迟完了" << pthread_self() << flush << endl;
             av_packet_unref(pAVP);
-        }*/
+        }
         else
         {
             // cout << "其他帧";
@@ -409,7 +418,7 @@ int MainWindow::SDL(uint8_t *YPlane, uint8_t *UPlane, uint8_t *VPlane, int width
     SDL_RenderCopy(renderer, texture, NULL, &myrect);
     SDL_RenderPresent(renderer);
 
-    SDL_Delay(fps);
+    // SDL_Delay(fps);
     return 0;
 }
 
