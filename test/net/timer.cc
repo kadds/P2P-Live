@@ -12,99 +12,87 @@ using namespace net;
 TEST(TimerTest, TimerShortTick)
 {
     event_context_t ctx(event_strategy::select);
-    event_loop_t loop;
-    ctx.add_event_loop(&loop);
     microsecond_t point = get_current_time();
     microsecond_t point2;
     // 500ms
     microsecond_t span = 500000;
 
-    loop.add_timer(::net::make_timer(span, [&loop, &point2]() {
+    event_loop_t::current().add_timer(::net::make_timer(span, [&ctx, &point2]() {
         point2 = get_current_time();
-        loop.exit(1);
+        ctx.exit_all(1);
     }));
-    loop.run();
+    ctx.run();
     GTEST_ASSERT_GE(point2 - point, span);
     GTEST_ASSERT_LT(point2 - point, span + timer_min_precision * 2);
 }
 
 TEST(TimerTest, TimerLongTick)
 {
-    event_context_t ctx(event_strategy::epoll);
+    event_context_t ctx(event_strategy::epoll, 500000);
     // 500ms
-    auto time_wheel = create_time_manager(500000);
-    event_loop_t loop(std::move(time_wheel));
-    ctx.add_event_loop(&loop);
     microsecond_t point = get_current_time();
     microsecond_t point2;
     // 550ms
     microsecond_t span = 550000;
 
-    loop.add_timer(::net::make_timer(span, [&loop, &point2]() {
+    event_loop_t::current().add_timer(::net::make_timer(span, [&ctx, &point2]() {
         point2 = get_current_time();
-        loop.exit(1);
+        ctx.exit_all(1);
     }));
-    loop.run();
+    ctx.run();
     GTEST_ASSERT_GE(point2 - point, span);
     GTEST_ASSERT_LT(point2 - point, span + 500000 * 2);
 }
 
-void work(event_loop_t &loop)
+void work()
 {
-    loop.add_timer(::net::timer_t(get_current_time() + 200000, [&loop]() { work(loop); }));
+    event_loop_t::current().add_timer(::net::timer_t(get_current_time() + 200000, []() { work(); }));
     // work load
     std::this_thread::sleep_for(std::chrono::milliseconds(180));
 }
 
 TEST(TimerTest, TimerFullWorkLoad)
 {
-    event_context_t ctx(event_strategy::epoll);
     // 100ms
-    auto time_wheel = create_time_manager(100000);
-    event_loop_t loop(std::move(time_wheel));
-    ctx.add_event_loop(&loop);
+    event_context_t ctx(event_strategy::epoll, 100000);
+
     microsecond_t point = get_current_time();
     microsecond_t point2;
     // 800ms
     microsecond_t span = 800000;
-    loop.add_timer(::net::make_timer(span, [&loop, &point2]() {
+    event_loop_t::current().add_timer(::net::make_timer(span, [&ctx, &point2]() {
         point2 = get_current_time();
-        loop.exit(1);
+        ctx.exit_all(1);
     }));
 
-    loop.add_timer(::net::timer_t(get_current_time() + 200000, [&loop]() { work(loop); }));
+    event_loop_t::current().add_timer(::net::timer_t(get_current_time() + 200000, []() { work(); }));
 
-    loop.run();
+    ctx.run();
     GTEST_ASSERT_GE(point2 - point, span);
 }
 
 TEST(TimerTest, TimerRemove)
 {
-    event_context_t ctx(event_strategy::epoll);
-    // 100ms
-    auto time_wheel = create_time_manager(make_timespan(0, 100));
-    event_loop_t loop(std::move(time_wheel));
-    ctx.add_event_loop(&loop);
+    event_context_t ctx(event_strategy::epoll, 100000);
     microsecond_t point = get_current_time();
     microsecond_t point2;
 
-    auto tick = loop.add_timer(make_timer(make_timespan(1, 500), [&loop, &point2]() {
+    auto tick = event_loop_t::current().add_timer(make_timer(make_timespan(1, 500), []() {
         std::string str = "timer remove failed";
         GTEST_ASSERT_EQ(str, "");
     }));
 
-    loop.add_timer(make_timer(make_timespan(1), [&loop, &tick]() { loop.remove_timer(tick); }));
-    loop.add_timer(make_timer(make_timespan(1, 800), [&loop, &tick]() { loop.exit(0); }));
+    event_loop_t::current().add_timer(
+        make_timer(make_timespan(1), [&tick]() { event_loop_t::current().remove_timer(tick); }));
+    event_loop_t::current().add_timer(make_timer(make_timespan(1, 800), [&ctx, &tick]() { ctx.exit_all(0); }));
 
-    loop.run();
+    ctx.run();
 }
 
 TEST(TimerTest, SocketTimer)
 {
     socket_addr_t test_addr("127.0.0.1", 2222);
     event_context_t ctx(event_strategy::epoll);
-    event_loop_t loop;
-    ctx.add_event_loop(&loop);
     tcp::server_t server;
 
     // 500ms
@@ -127,11 +115,10 @@ TEST(TimerTest, SocketTimer)
             buffer.expect().origin_length();
             GTEST_ASSERT_EQ(co::await(tcp::conn_aread, conn, buffer), io_result::ok);
         })
-        .on_server_disconnect([&loop](tcp::client_t &c, tcp::connection_t conn) { loop.exit(0); });
+        .on_server_disconnect([&ctx](tcp::client_t &c, tcp::connection_t conn) { ctx.exit_all(0); });
 
     client.connect(ctx, test_addr, 1000);
 
-    loop.run();
-    server.close_server();
+    ctx.run();
     GTEST_ASSERT_GE(get_current_time() - point, span);
 }

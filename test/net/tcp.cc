@@ -13,8 +13,6 @@ TEST(TCPTest, StreamConnection)
 {
     socket_addr_t test_addr("127.0.0.1", 2222);
     event_context_t ctx(event_strategy::epoll);
-    event_loop_t loop;
-    ctx.add_event_loop(&loop);
     tcp::server_t server;
 
     server.on_client_join([](tcp::server_t &s, tcp::connection_t conn) {
@@ -38,15 +36,15 @@ TEST(TCPTest, StreamConnection)
             GTEST_ASSERT_EQ(co::await(tcp::conn_aread, conn, buffer), io_result::ok);
             GTEST_ASSERT_EQ(buffer.to_string(), test_data);
         })
-        .on_server_disconnect([&loop](tcp::client_t &c, tcp::connection_t conn) { loop.exit(0); });
+        .on_server_disconnect([&ctx](tcp::client_t &c, tcp::connection_t conn) { ctx.exit_all(0); });
 
     client.connect(ctx, test_addr, net::make_timespan_full());
-    loop.add_timer(make_timer(make_timespan(1, 500, 0), [&loop]() {
-        loop.exit(-1);
+    event_loop_t::current().add_timer(make_timer(make_timespan(1, 500, 0), [&ctx]() {
+        ctx.exit_all(-1);
         std::string str = "timeout";
         GTEST_ASSERT_EQ(str, "");
     }));
-    loop.run();
+    ctx.run();
 }
 
 constexpr u64 test_size = 20480;
@@ -60,8 +58,6 @@ TEST(TCPTest, PacketConnection)
 {
     socket_addr_t test_addr("127.0.0.1", 2222);
     event_context_t ctx(event_strategy::epoll);
-    event_loop_t loop;
-    ctx.add_event_loop(&loop);
     tcp::server_t server;
 
     server.on_client_join([](tcp::server_t &s, tcp::connection_t conn) {
@@ -119,46 +115,38 @@ TEST(TCPTest, PacketConnection)
                 GTEST_ASSERT_EQ(head.v4.msg_type, package->data[test_bit]);
             }
         })
-        .on_server_disconnect([&loop](tcp::client_t &c, tcp::connection_t conn) { loop.exit(0); });
+        .on_server_disconnect([&ctx](tcp::client_t &c, tcp::connection_t conn) { ctx.exit_all(0); });
 
     client.connect(ctx, test_addr, net::make_timespan_full());
-    loop.add_timer(make_timer(make_timespan(5), [&loop]() {
-        loop.exit(-1);
+    event_loop_t::current().add_timer(make_timer(make_timespan(5), [&ctx]() {
+        ctx.exit_all(0);
         std::string str = "timeout";
         GTEST_ASSERT_EQ(str, "");
     }));
-    loop.run();
+    ctx.run();
 }
 
 TEST(TCPTest, TCPTimeout)
 {
     socket_addr_t test_addr("8.8.8.8", 2222);
     event_context_t ctx(event_strategy::epoll);
-    event_loop_t loop;
-    ctx.add_event_loop(&loop);
 
     tcp::client_t client;
-    client.on_server_error([&loop](tcp::client_t &c, socket_t *socket, connection_state state) {
+    client.on_server_error([&ctx](tcp::client_t &c, socket_t *socket, connection_state state) {
         GTEST_ASSERT_EQ((int)state, (int)connection_state::timeout);
-        loop.exit(0);
+        ctx.exit_all(0);
     });
 
     client.connect(ctx, test_addr, net::make_timespan(1));
-    loop.add_timer(make_timer(make_timespan(1, 500, 0), [&loop]() {
-        loop.exit(-1);
+    event_loop_t::current().add_timer(make_timer(make_timespan(1, 500, 0), [&ctx]() {
+        ctx.exit_all(-1);
         std::string str = "timeout test failed";
         GTEST_ASSERT_EQ(str, "");
     }));
-    loop.run();
+    ctx.run();
 }
 
-static void thread_main(event_context_t *context)
-{
-    event_loop_t loop;
-    context->add_event_loop(&loop);
-    loop.run();
-    context->remove_event_loop(&loop);
-}
+static void thread_main(event_context_t *context) { context->run(); }
 
 static void client_main(tcp::client_t &client, event_context_t *context, net::socket_addr_t test_addr,
                         std::atomic_int &ref)
@@ -174,7 +162,7 @@ static void client_main(tcp::client_t &client, event_context_t *context, net::so
         })
         .on_server_disconnect([context, &ref](tcp::client_t &c, tcp::connection_t conn) {
             if (--ref <= 0)
-                context->exit_all_loop(0);
+                context->exit_all(0);
         });
 
     client.connect(*context, test_addr, net::make_timespan_full());
@@ -184,8 +172,6 @@ TEST(TCPTest, MultiThreadTest)
 {
     socket_addr_t test_addr("127.0.0.1", 2129);
     event_context_t ctx(event_strategy::epoll);
-    event_loop_t loop;
-    ctx.add_event_loop(&loop);
     tcp::server_t server;
 
     server.on_client_join([](tcp::server_t &s, tcp::connection_t conn) {
@@ -216,12 +202,12 @@ TEST(TCPTest, MultiThreadTest)
         threads[i] = std::make_unique<std::thread>(std::bind(&thread_main, &ctx));
     }
 
-    loop.add_timer(make_timer(make_timespan(300), [&ctx]() {
-        ctx.exit_all_loop(-1);
+    event_loop_t::current().add_timer(make_timer(make_timespan(300), [&ctx]() {
+        ctx.exit_all(-1);
         std::string str = "timeout";
         GTEST_ASSERT_EQ(str, "");
     }));
-    loop.run();
+    ctx.run();
 
     for (auto i = 0; i < threadsc; i++)
     {

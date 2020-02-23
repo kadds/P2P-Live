@@ -79,7 +79,6 @@ class event_fd_handler_t;
 /// event loop
 /// a loop pre thread
 /// all event is generate by demultiplexer. event loop just fetch event and distribute event run into event coroutine.
-///\note remember add this loop to context
 class event_loop_t
 {
     bool is_exit;
@@ -103,7 +102,7 @@ class event_loop_t
     event_demultiplexer *get_demuxer() const { return demuxer; }
 
   public:
-    event_loop_t();
+    event_loop_t(microsecond_t precision);
     event_loop_t(std::unique_ptr<time_manager_t> time_manager);
     ~event_loop_t();
     event_loop_t(const event_loop_t &) = delete;
@@ -136,20 +135,26 @@ class event_context_t
     event_strategy strategy;
     std::shared_mutex loop_mutex;
     std::vector<event_loop_t *> loops;
+    std::mutex exit_mutex;
+    std::condition_variable cond;
+    std::atomic_int loop_counter;
     socket_event_loop_map_t map;
     std::shared_mutex map_mutex;
+    microsecond_t precision;
+
+    void do_init();
 
   public:
-    event_context_t(event_strategy strategy);
+    event_context_t(event_strategy strategy, microsecond_t precision = timer_min_precision);
+    ~event_context_t();
     void add_executor(execute_context_t *exectx);
     void add_executor(execute_context_t *exectx, event_loop_t *loop);
     void remove_executor(execute_context_t *exectx);
 
     event_loop_t &select_loop();
 
-    void add_event_loop(event_loop_t *loop);
-    void remove_event_loop(event_loop_t *loop);
-    void exit_all_loop(int code);
+    void exit_all(int code);
+    int run();
 };
 
 } // namespace net
