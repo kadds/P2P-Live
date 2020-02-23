@@ -12,6 +12,7 @@ FIND_PACKAGE(Qt5Core REQUIRED)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 FIND_PACKAGE(SDL2 REQUIRED)
+find_package(Threads REQUIRED)
 
 add_executable(source-client ${DIR_SRCS} ${WINDOW_UI})
 
@@ -19,4 +20,4 @@ target_include_directories(source-client PRIVATE ${QT_INCLUDES} )
 target_include_directories(source-client PRIVATE ${FFMPEG_INCLUDE_DIR})
 target_include_directories(source-client PRIVATE ${SDL2_INCLUDE_DIRS})
 
-target_link_libraries(source-client PRIVATE ${FFMPEG_LIBRARY} Qt5::Widgets Qt5::Core Qt5::Gui glog SDL2)
+target_link_libraries(source-client PRIVATE ${FFMPEG_LIBRARY} Qt5::Widgets Qt5::Core Qt5::Gui glog SDL2 Threads::Threads)

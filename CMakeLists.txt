@@ -41,7 +41,12 @@ find_library( SWSCALE_LIBRARY swscale )
 
 set (FFMPEG_INCLUDE_DIR ${AVCODEC_INCLUDE_DIR})
 set (FFMPEG_LIBRARY ${AVFORMAT_LIBRARY} ${AVDEVICE_LIBRARY} ${AVCODEC_LIBRARY} ${SWRESAMPLE_LIBRARY} ${SWSCALE_LIBRARY} ${AVFILTER_LIBRARY} ${AVUTIL_LIBRARY}
-    pthread va m z)
+    va m z)
+
+find_package(gflags REQUIRED)
+find_package(Threads REQUIRED)
+include_directories(${gflags_INCLUDE_DIR})
+
 
 if (MMDBG)
     set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")

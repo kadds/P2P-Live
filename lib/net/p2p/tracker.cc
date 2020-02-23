@@ -239,8 +239,11 @@ void tracker_server_t::server_main(tcp::connection_t conn)
                 {
                     if (edge_key[i] != init.key[i])
                     {
-                        if (error_handler)
-                            error_handler(*this, remote_addr, connection_state::secure_check_failed);
+                        if (peer_error_handler)
+                        {
+                            peer_error_handler(*this, remote_addr, init.register_sid,
+                                               connection_state::secure_check_failed);
+                        }
                         return;
                     }
                 }
@@ -262,6 +265,8 @@ void tracker_server_t::server_main(tcp::connection_t conn)
             auto &node = node_infos[index];
             node.last_ping = get_current_time();
             node.sid = init.register_sid;
+            if (add_handler)
+                add_handler(*this, node.node, node.sid);
         }
         else if (head.v4.msg_type == tracker_packet::heartbeat)
         {
@@ -305,8 +310,8 @@ void tracker_server_t::client_main(tcp::connection_t conn)
                 /// check if peer pingpong is timeout
                 if (get_current_time() - it->second->last_ping > tick_timespan * tick_times)
                 {
-                    if (error_handler)
-                        error_handler(*this, remote_addr, connection_state::timeout);
+                    if (link_error_handler)
+                        link_error_handler(*this, remote_addr, connection_state::timeout);
                     // close connection
                     return;
                 }
@@ -314,11 +319,17 @@ void tracker_server_t::client_main(tcp::connection_t conn)
         }
         else if (ret != io_result::ok)
         {
+            if (link_error_handler)
+                link_error_handler(*this, remote_addr, connection_state::connection_refuse);
             return;
         }
 
         if (head.version != 4)
+        {
+            if (link_error_handler)
+                link_error_handler(*this, remote_addr, connection_state::invalid_request);
             return;
+        }
         if (head.v4.msg_type == tracker_packet::pong) // pong
         {
             auto len = head.v4.size;
@@ -336,6 +347,11 @@ void tracker_server_t::client_main(tcp::connection_t conn)
             endian::cast(pong.udp_port);
             // save
             update_tracker(remote_addr, conn, pong);
+        }
+        else
+        {
+            if (link_error_handler)
+                link_error_handler(*this, remote_addr, connection_state::invalid_request);
         }
     }
 }
@@ -394,18 +410,46 @@ void tracker_server_t::bind(event_context_t &context, socket_addr_t addr, bool r
 {
     server.on_client_join(std::bind(&tracker_server_t::server_main, this, std::placeholders::_2));
     server
-        .on_client_error([this](tcp::server_t &, socket_t *so, connection_state state) {
-            if (error_handler)
-                error_handler(*this, so->remote_addr(), state);
-        })
-        .on_client_error([this](tcp::server_t &, socket_t *so, connection_state state) {
-            auto it = trackers.find(so->remote_addr());
+        .on_client_error([this](tcp::server_t &, socket_t *so, socket_addr_t remote, connection_state state) {
+            auto it = trackers.find(remote);
             if (it != trackers.end())
+            {
                 it->second->closed = true;
+                if (link_error_handler)
+                    link_error_handler(*this, remote, state);
+            }
+            else
+            {
+                auto it = nodes.find(remote);
+                if (it != nodes.end())
+                {
+                    auto idx = it->second;
+                    auto &node = node_infos[idx];
+                    if (peer_error_handler)
+                        peer_error_handler(*this, remote, node.sid, state);
+                }
+            }
         })
         .on_client_exit([this](tcp::server_t &, tcp::connection_t conn) {
-            if (unlink_handler)
-                unlink_handler(*this, conn.get_socket()->remote_addr());
+            auto remote = conn.get_socket()->remote_addr();
+            auto it = trackers.find(remote);
+            if (it != trackers.end())
+            {
+                it->second->closed = true;
+                if (unlink_handler)
+                    unlink_handler(*this, remote);
+            }
+            else
+            {
+                auto it = nodes.find(remote);
+                if (it != nodes.end())
+                {
+                    auto idx = it->second;
+                    auto &node = node_infos[idx];
+                    if (remove_handler)
+                        remove_handler(*this, node.node, node.sid);
+                }
+            }
         });
 
     server.listen(context, addr, 10000000, reuse_addr);
@@ -433,12 +477,12 @@ void tracker_server_t::link_other_tracker_server(event_context_t &context, socke
         p.node.port = addr.get_port();
         p.client.on_server_connect(std::bind(&tracker_server_t::client_main, this, std::placeholders::_2));
         p.client
-            .on_server_error([addr, this](tcp::client_t &, socket_t *so, connection_state state) {
+            .on_server_error([this, addr](tcp::client_t &, socket_t *so, socket_addr_t remote, connection_state state) {
                 auto it = trackers.find(addr);
                 if (it != trackers.end())
                     it->second->closed = true;
-                if (error_handler)
-                    error_handler(*this, addr, state);
+                if (link_error_handler)
+                    link_error_handler(*this, addr, state);
             })
             .on_server_disconnect([addr, this](tcp::client_t &c, tcp::connection_t conn) {
                 if (unlink_handler)
@@ -449,9 +493,9 @@ void tracker_server_t::link_other_tracker_server(event_context_t &context, socke
     }
 }
 
-tracker_server_t &tracker_server_t::on_link_error(error_handler_t handler)
+tracker_server_t &tracker_server_t::on_link_error(link_error_handler_t handler)
 {
-    error_handler = handler;
+    link_error_handler = handler;
     return *this;
 }
 
@@ -464,6 +508,24 @@ tracker_server_t &tracker_server_t::on_link_server(link_handler_t handler)
 tracker_server_t &tracker_server_t::on_unlink_server(link_handler_t handler)
 {
     unlink_handler = handler;
+    return *this;
+}
+
+tracker_server_t &tracker_server_t::on_shared_peer_add_connection(peer_add_handler_t handler)
+{
+    add_handler = handler;
+    return *this;
+}
+
+tracker_server_t &tracker_server_t::on_shared_peer_remove_connection(peer_remove_handler_t handler)
+{
+    remove_handler = handler;
+    return *this;
+}
+
+tracker_server_t &tracker_server_t::on_shared_peer_error(peer_error_handler_t handler)
+{
+    peer_error_handler = handler;
     return *this;
 }
 
@@ -637,7 +699,7 @@ void tracker_node_client_t::main(tcp::connection_t conn)
             node.udp_port = request.from_udp_port;
 
             if (connect_handler)
-                connect_handler(*this, node, request.from_udp_port);
+                connect_handler(*this, node);
         }
         else
         {
@@ -666,9 +728,9 @@ void tracker_node_client_t::connect_server(event_context_t &context, socket_addr
 
     wait_next_package = false;
     client.on_server_connect(std::bind(&tracker_node_client_t::main, this, std::placeholders::_2))
-        .on_server_error([this](tcp::client_t &, socket_t *so, connection_state state) {
+        .on_server_error([this](tcp::client_t &c, socket_t *so, socket_addr_t addr, connection_state state) {
             if (error_handler)
-                error_handler(*this, so, state);
+                error_handler(*this, addr, state);
         });
     server_udp_address = {};
     client.connect(context, addr, timeout);

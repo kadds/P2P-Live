@@ -1,6 +1,7 @@
 #include "net/event.hpp"
 #include "net/p2p/peer.hpp"
 #include "net/p2p/tracker.hpp"
+#include "net/socket.hpp"
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <thread>
@@ -16,23 +17,32 @@ DEFINE_uint32(timeout, 5000, "tracker server connect timeout (ms)");
 
 net::event_context_t *app_context;
 
-void thread_main()
-{
-    net::event_loop_t looper;
-    app_context->add_event_loop(&looper);
-    looper.run();
-}
+void thread_main() { app_context->run(); }
 
 static void atexit_func() { google::ShutdownGoogleLogging(); }
+
+void server_connect_error(net::p2p::tracker_node_client_t &client, net::socket_addr_t remote,
+                          net::connection_state state)
+{
+    LOG(ERROR) << "connect to tracker failed. server: " << remote.to_string()
+               << ", reason: " << net::connection_state_strings[(int)state] << ".";
+}
+
+void node_request_connect(net::p2p::tracker_node_client_t &client, net::p2p::peer_node_t node)
+{
+    net::socket_addr_t remote(node.ip, node.port);
+
+    LOG(INFO) << "new node request connect " << remote.to_string() << " udp:" << node.udp_port << ".";
+}
 
 int main(int argc, char **argv)
 {
     google::InitGoogleLogging(argv[0]);
-    google::ParseCommandLineFlags(&argc, &argv, true);
-    google::SetLogDestination(google::GLOG_FATAL, "./edge_server.log");
-    google::SetLogDestination(google::GLOG_ERROR, "./edge_server.log");
-    google::SetLogDestination(google::GLOG_INFO, "./edge_server.log");
-    google::SetLogDestination(google::GLOG_WARNING, "./edge_server.log");
+    google::ParseCommandLineFlags(&argc, &argv, false);
+    google::SetLogDestination(google::GLOG_FATAL, "./edge-server.log");
+    google::SetLogDestination(google::GLOG_ERROR, "./edge-server.log");
+    google::SetLogDestination(google::GLOG_INFO, "./edge-server.log");
+    google::SetLogDestination(google::GLOG_WARNING, "./edge-server.log");
     google::SetStderrLogging(google::GLOG_INFO);
 
     atexit(atexit_func);
@@ -43,9 +53,6 @@ int main(int argc, char **argv)
     LOG(INFO) << "create application context";
     net::event_context_t context(net::event_strategy::epoll);
     app_context = &context;
-
-    net::event_loop_t looper;
-    app_context->add_event_loop(&looper);
 
     if (FLAGS_threads == 0)
     {
@@ -61,10 +68,13 @@ int main(int argc, char **argv)
 
     std::unique_ptr<net::p2p::tracker_node_client_t> tracker_client =
         std::make_unique<net::p2p::tracker_node_client_t>();
-    tracker_client->connect_server(context, net::socket_addr_t(FLAGS_tip, FLAGS_tport), FLAGS_timeout / 1000);
+    tracker_client->config(true, 0, "edge server key");
+    tracker_client->connect_server(context, net::socket_addr_t(FLAGS_tip, FLAGS_tport), FLAGS_timeout * 1000);
+    tracker_client->on_error(server_connect_error);
+    tracker_client->on_node_request_connect(node_request_connect);
 
     LOG(INFO) << "run event loop";
-    auto ret = looper.run();
+    auto ret = app_context->run();
     net::uninit_lib();
     return ret;
 }

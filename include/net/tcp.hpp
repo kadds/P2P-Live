@@ -97,7 +97,7 @@ class server_t
 {
   public:
     using handler_t = std::function<void(server_t &, connection_t)>;
-    using error_handler_t = std::function<void(server_t &, socket_t *, connection_state)>;
+    using error_handler_t = std::function<void(server_t &, socket_t *, socket_addr_t, connection_state)>;
 
   private:
     socket_t *server_socket;
@@ -127,7 +127,7 @@ class client_t
 {
   public:
     using handler_t = std::function<void(client_t &, connection_t)>;
-    using error_handler_t = std::function<void(client_t &, socket_t *, connection_state)>;
+    using error_handler_t = std::function<void(client_t &, socket_t *, socket_addr_t, connection_state)>;
 
   private:
     socket_t *socket;

@@ -132,7 +132,7 @@ TEST(TCPTest, TCPTimeout)
     event_context_t ctx(event_strategy::epoll);
 
     tcp::client_t client;
-    client.on_server_error([&ctx](tcp::client_t &c, socket_t *socket, connection_state state) {
+    client.on_server_error([&ctx](tcp::client_t &c, socket_t *socket, socket_addr_t addr, connection_state state) {
         GTEST_ASSERT_EQ((int)state, (int)connection_state::timeout);
         ctx.exit_all(0);
     });

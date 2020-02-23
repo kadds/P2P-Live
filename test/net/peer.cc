@@ -202,13 +202,13 @@ void static peer_main(event_context_t &ctx, socket_addr_t taddr, tracker_node_cl
                 client.request_connect_node(nodes[i], peer.get_udp());
             }
         })
-        .on_node_request_connect([&peer, &remote_peers](tracker_node_client_t &client, peer_node_t node, u16 udp_port) {
+        .on_node_request_connect([&peer, &remote_peers](tracker_node_client_t &client, peer_node_t node) {
             // 如果A可以直连这里会连接成功，后面的request会被对方忽略
-            socket_addr_t addr(node.ip, udp_port);
+            socket_addr_t addr(node.ip, node.udp_port);
             if (remote_peers[addr] != nullptr)
                 return;
 
-            peer.connect_to_peer(peer.add_peer(), socket_addr_t(node.ip, udp_port));
+            peer.connect_to_peer(peer.add_peer(), socket_addr_t(node.ip, node.udp_port));
             client.request_connect_node(node, peer.get_udp());
         });
     peer.on_peer_connect([&flags, &ctx, &remote_peers](peer_t &peer, peer_info_t *p) {

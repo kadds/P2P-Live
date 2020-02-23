@@ -12,7 +12,17 @@ enum class connection_state
     no_resource,
     timeout,
     secure_check_failed,
+    invalid_request,
 };
+
+static const char *connection_state_strings[] = {"the connection is closed unexpectedly",
+                                                 "the connection is closed by peer",
+                                                 "remote connection refused",
+                                                 "local address is occupied",
+                                                 "system resource limit, check system memory and file desces",
+                                                 "connection timeout",
+                                                 "security check failed",
+                                                 "invalid data request"};
 
 class net_connect_exception : public std::exception
 {
@@ -22,6 +32,7 @@ class net_connect_exception : public std::exception
   public:
     net_connect_exception(std::string str, connection_state state)
         : str(str)
+        , state(state)
     {
     }
 

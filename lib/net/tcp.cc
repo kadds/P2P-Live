@@ -209,17 +209,15 @@ server_t::~server_t() { close_server(); }
 
 void server_t::client_main(socket_t *socket)
 {
+    auto remote = socket->remote_addr();
     try
     {
         if (join_handler)
             join_handler(*this, socket);
     } catch (net::net_connect_exception &e)
     {
-        if (e.get_state() != connection_state::closed)
-        {
-            if (error_handler)
-                error_handler(*this, socket, e.get_state());
-        }
+        if (error_handler)
+            error_handler(*this, socket, remote, e.get_state());
     }
     exit_client(socket);
 }
@@ -311,11 +309,8 @@ void client_t::wait_server(socket_addr_t address, microsecond_t timeout)
                 join_handler(*this, socket);
         } catch (net::net_connect_exception &e)
         {
-            if (e.get_state() != connection_state::closed)
-            {
-                if (error_handler)
-                    error_handler(*this, socket, e.get_state());
-            }
+            if (error_handler)
+                error_handler(*this, socket, address, e.get_state());
         }
     }
     else
@@ -323,9 +318,9 @@ void client_t::wait_server(socket_addr_t address, microsecond_t timeout)
         if (error_handler)
         {
             if (io_result::timeout == ret)
-                error_handler(*this, socket, connection_state::timeout);
+                error_handler(*this, socket, address, connection_state::timeout);
             else
-                error_handler(*this, socket, connection_state::closed);
+                error_handler(*this, socket, address, connection_state::closed);
         }
     }
     close();

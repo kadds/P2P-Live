@@ -265,11 +265,18 @@ struct addr_hash_func
 constexpr static inline u64 node_tick_timespan = 30000000;
 constexpr static inline u64 node_tick_times = 2;
 
+/// TODO: 解决线程安全问题
 class tracker_server_t
 {
   private:
-    using error_handler_t = std::function<void(tracker_server_t &, socket_addr_t address, connection_state)>;
+    using link_error_handler_t = std::function<void(tracker_server_t &, socket_addr_t address, connection_state)>;
     using link_handler_t = std::function<void(tracker_server_t &, socket_addr_t address)>;
+
+    using peer_add_handler_t = std::function<void(tracker_server_t &, peer_node_t node, u64 sid)>;
+    using peer_remove_handler_t = std::function<void(tracker_server_t &, peer_node_t node, u64 sid)>;
+    using peer_error_handler_t = std::function<void(tracker_server_t &, socket_addr_t, u64 sid, connection_state)>;
+
+    using peer_request_handler_t = std::function<void(tracker_server_t &, peer_node_t node, u64 sid, u64 request_id)>;
 
   private:
     /// 1min
@@ -289,8 +296,11 @@ class tracker_server_t
     std::unordered_map<socket_addr_t, std::unique_ptr<tracker_info_t>, addr_hash_func> trackers;
     std::unordered_map<socket_addr_t, size_t, addr_hash_func> nodes;
     std::vector<node_info_t> node_infos;
-    error_handler_t error_handler;
+    link_error_handler_t link_error_handler;
     link_handler_t link_handler, unlink_handler;
+    peer_add_handler_t add_handler;
+    peer_remove_handler_t remove_handler;
+    peer_error_handler_t peer_error_handler;
 
     void update_tracker(socket_addr_t addr, tcp::connection_t conn, tracker_ping_pong_t &res);
 
@@ -305,9 +315,13 @@ class tracker_server_t
 
     void bind(event_context_t &context, socket_addr_t addr, bool reuse_addr = false);
     void link_other_tracker_server(event_context_t &context, socket_addr_t addr, microsecond_t timeout);
-    tracker_server_t &on_link_error(error_handler_t handler);
+    tracker_server_t &on_link_error(link_error_handler_t handler);
     tracker_server_t &on_link_server(link_handler_t handler);
     tracker_server_t &on_unlink_server(link_handler_t handler);
+
+    tracker_server_t &on_shared_peer_add_connection(peer_add_handler_t handler);
+    tracker_server_t &on_shared_peer_remove_connection(peer_remove_handler_t handler);
+    tracker_server_t &on_shared_peer_error(peer_error_handler_t handler);
 
     std::vector<tracker_node_t> get_trackers() const;
 
@@ -321,8 +335,8 @@ class tracker_node_client_t
   private:
     using nodes_update_handler_t = std::function<void(tracker_node_client_t &, peer_node_t *, u64)>;
     using trackers_update_handler_t = std::function<void(tracker_node_client_t &, tracker_node_t *, u64)>;
-    using nodes_connect_handler_t = std::function<void(tracker_node_client_t &, peer_node_t, u16 udp_port)>;
-    using error_handler_t = std::function<void(tracker_node_client_t &, socket_t *, connection_state)>;
+    using nodes_connect_handler_t = std::function<void(tracker_node_client_t &, peer_node_t)>;
+    using error_handler_t = std::function<void(tracker_node_client_t &, socket_addr_t addr, connection_state)>;
     using disconnect_handler_t = std::function<void(tracker_node_client_t &)>;
 
   private:

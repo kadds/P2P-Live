@@ -12,12 +12,7 @@ DEFINE_bool(reuse, false, "resuse address");
 
 net::event_context_t *app_context;
 
-void thread_main()
-{
-    net::event_loop_t looper;
-    app_context->add_event_loop(&looper);
-    looper.run();
-}
+void thread_main() { app_context->run(); }
 
 static void atexit_func()
 {
@@ -25,14 +20,33 @@ static void atexit_func()
     google::ShutdownGoogleLogging();
 }
 
+void on_shared_peer_add(net::p2p::tracker_server_t &server, net::p2p::peer_node_t node, net::u64 sid)
+{
+    net::socket_addr_t addr(node.ip, node.port);
+    LOG(INFO) << "new shared peer " << addr.to_string() << " udp: " << node.port << " sid: " << sid;
+}
+
+void on_shared_peer_remove(net::p2p::tracker_server_t &server, net::p2p::peer_node_t node, net::u64 sid)
+{
+    net::socket_addr_t addr(node.ip, node.port);
+    LOG(INFO) << "exit shared peer " << addr.to_string() << " udp: " << node.port << " sid " << sid;
+}
+void on_shared_peer_error(net::p2p::tracker_server_t &server, net::socket_addr_t addr, net::u64 sid,
+                          net::connection_state state)
+
+{
+    LOG(INFO) << "exit shared peer " << addr.to_string() << " sid: " << sid
+              << " reason: " << net::connection_state_strings[(int)state];
+}
+
 int main(int argc, char **argv)
 {
     google::InitGoogleLogging(argv[0]);
-    google::ParseCommandLineFlags(&argc, &argv, true);
-    google::SetLogDestination(google::GLOG_FATAL, "./tracker_server.log");
-    google::SetLogDestination(google::GLOG_ERROR, "./tracker_server.log");
-    google::SetLogDestination(google::GLOG_INFO, "./tracker_server.log");
-    google::SetLogDestination(google::GLOG_WARNING, "./tracker_server.log");
+    google::ParseCommandLineFlags(&argc, &argv, false);
+    google::SetLogDestination(google::GLOG_FATAL, "./tracker-server.log");
+    google::SetLogDestination(google::GLOG_ERROR, "./tracker-server.log");
+    google::SetLogDestination(google::GLOG_INFO, "./tracker-server.log");
+    google::SetLogDestination(google::GLOG_WARNING, "./tracker-server.log");
     google::SetStderrLogging(google::GLOG_INFO);
 
     atexit(atexit_func);
@@ -44,16 +58,13 @@ int main(int argc, char **argv)
     net::event_context_t context(net::event_strategy::epoll);
     app_context = &context;
 
-    net::event_loop_t looper;
-    app_context->add_event_loop(&looper);
-
     if (FLAGS_threads == 0)
     {
         FLAGS_threads = 4;
     }
     LOG(INFO) << "thread detect " << FLAGS_threads;
 
-    for (int i = 0; i < FLAGS_threads; i++)
+    for (int i = 0; i < FLAGS_threads - 1; i++)
     {
         std::thread thd(thread_main);
         thd.detach();
@@ -63,9 +74,14 @@ int main(int argc, char **argv)
 
     std::unique_ptr<net::p2p::tracker_server_t> tracker_server = std::make_unique<net::p2p::tracker_server_t>();
     tracker_server->bind(context, net::socket_addr_t(FLAGS_ip, FLAGS_port), FLAGS_reuse);
+    /// configurate edge server key
+    tracker_server->config("edge server key");
+    tracker_server->on_shared_peer_add_connection(on_shared_peer_add);
+    tracker_server->on_shared_peer_remove_connection(on_shared_peer_remove);
+    tracker_server->on_shared_peer_error(on_shared_peer_error);
 
     LOG(INFO) << "run event loop";
-    auto ret = looper.run();
+    auto ret = app_context->run();
     net::uninit_lib();
     return ret;
 }
