@@ -9,14 +9,7 @@
 
 net::event_context_t *app_context;
 
-void thread_main()
-{
-    net::event_context_t context(net::event_strategy::epoll);
-    net::event_loop_t looper;
-    context.add_event_loop(&looper);
-
-    looper.run();
-}
+void thread_main() { app_context->run(); }
 
 void atexit_func() { google::ShutdownGoogleLogging(); }
 
@@ -37,12 +30,9 @@ int main(int argc, char **argv)
     app_context = &context;
     LOG(INFO) << "create application event context";
 
-    net::event_loop_t looper;
-    app_context->add_event_loop(&looper);
-
     std::thread thd(thread_main);
     thd.detach();
 
     LOG(INFO) << "run event loop";
-    return looper.run();
+    return context.run();
 }

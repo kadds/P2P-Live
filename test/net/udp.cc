@@ -13,12 +13,10 @@ TEST(UPDTest, UPDPackageTest)
 {
     socket_addr_t test_addr("127.0.0.1", 2224);
     event_context_t ctx(event_strategy::epoll);
-    event_loop_t loop;
-    ctx.add_event_loop(&loop);
     udp::server_t server;
 
     server.bind(ctx, test_addr);
-    server.run([&server, &loop]() {
+    server.run([&server, &ctx]() {
         auto socket = server.get_socket();
         socket_buffer_t buffer(test_data.size());
         buffer.expect().origin_length();
@@ -31,7 +29,7 @@ TEST(UPDTest, UPDPackageTest)
 
     udp::client_t client;
     client.connect(ctx, test_addr, false);
-    client.run([&client, &test_addr, &loop]() {
+    client.run([&client, &test_addr, &ctx]() {
         auto socket = client.get_socket();
         socket_buffer_t buffer(test_data);
         buffer.expect().origin_length();
@@ -40,7 +38,7 @@ TEST(UPDTest, UPDPackageTest)
         buffer.expect().origin_length();
         GTEST_ASSERT_EQ(co::await(socket_aread_from, socket, buffer, addr), io_result::ok);
         GTEST_ASSERT_EQ(buffer.to_string(), test_data);
-        loop.exit(0);
+        ctx.exit_all(0);
     });
-    loop.run();
+    ctx.run();
 }

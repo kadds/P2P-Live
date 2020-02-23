@@ -32,19 +32,11 @@ class event_fd_handler_t : public event_handler_t
     void write() const { eventfd_write(fd, 1); }
 };
 
-event_loop_t::event_loop_t()
+event_loop_t::event_loop_t(microsecond_t precision)
     : is_exit(false)
     , exit_code(0)
 {
-    time_manager = create_time_manager();
-    thread_in_loop = this;
-}
-
-event_loop_t::event_loop_t(std::unique_ptr<time_manager_t> time_manager)
-    : is_exit(false)
-    , exit_code(0)
-    , time_manager(std::move(time_manager))
-{
+    time_manager = create_time_manager(precision);
     thread_in_loop = this;
 }
 
@@ -182,48 +174,69 @@ event_loop_t &event_context_t::select_loop()
     return *min_load_loop;
 }
 
-event_context_t::event_context_t(event_strategy strategy)
+void event_context_t::do_init()
+{
+    if (thread_in_loop == nullptr)
+    {
+        auto loop = new event_loop_t(precision);
+        std::unique_lock<std::shared_mutex> lock(loop_mutex);
+        loop->set_context(this);
+        event_demultiplexer *demuxer = nullptr;
+        switch (strategy)
+        {
+            case event_strategy::select:
+                demuxer = new event_select_demultiplexer();
+                break;
+            case event_strategy::epoll:
+                demuxer = new event_epoll_demultiplexer();
+                break;
+            case event_strategy::IOCP:
+            default:
+                throw std::invalid_argument("invalid strategy");
+        }
+        loop->set_demuxer(demuxer);
+        loops.push_back(loop);
+        loop_counter++;
+    }
+}
+
+event_context_t::event_context_t(event_strategy strategy, microsecond_t precision)
     : strategy(strategy)
+    , loop_counter(0)
+    , precision(precision)
 {
+    do_init();
 }
 
-void event_context_t::add_event_loop(event_loop_t *loop)
+int event_context_t::run()
 {
-    std::unique_lock<std::shared_mutex> lock(loop_mutex);
-    loop->set_context(this);
-    event_demultiplexer *demuxer = nullptr;
-    switch (strategy)
-    {
-        case event_strategy::select:
-            demuxer = new event_select_demultiplexer();
-            break;
-        case event_strategy::epoll:
-            demuxer = new event_epoll_demultiplexer();
-            break;
-        case event_strategy::IOCP:
-        default:
-            throw std::invalid_argument("invalid strategy");
-    }
-    loop->set_demuxer(demuxer);
-    loops.push_back(loop);
+    do_init();
+
+    int code = thread_in_loop->run();
+
+    loop_counter--;
+    std::unique_lock<std::mutex> lock(exit_mutex);
+    cond.notify_all();
+    cond.wait(lock, [this]() { return loop_counter == 0; });
+
+    return code;
 }
 
-void event_context_t::remove_event_loop(event_loop_t *loop)
-{
-    std::unique_lock<std::shared_mutex> lock(loop_mutex);
-    auto it = std::find(loops.begin(), loops.end(), loop);
-    if (it != loops.end())
-    {
-        delete loop->get_demuxer();
-        loops.erase(it);
-    }
-}
-
-void event_context_t::exit_all_loop(int code)
+void event_context_t::exit_all(int code)
 {
     for (auto &loop : loops)
     {
         loop->exit(code);
+    }
+}
+
+event_context_t::~event_context_t()
+{
+    std::unique_lock<std::shared_mutex> lock(loop_mutex);
+    for (auto loop : loops)
+    {
+        delete loop->get_demuxer();
+        delete loop;
     }
 }
 
