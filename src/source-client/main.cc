@@ -5,6 +5,7 @@ extern "C" {
 #include <libavdevice/avdevice.h>
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
+#include <libavutil/imgutils.h>
 #include <libavutil/time.h>
 #include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
@@ -34,6 +35,7 @@ struct PacketQueue
 // FFmpeg Arg
 AVFormatContext *pFormatCtx_Video;
 AVFormatContext *pFormatCtx_Audio;
+
 AVInputFormat *pInputFormat_Audio;
 AVInputFormat *pInputFormat_Video;
 AVCodecContext *pCodecCtx_Audio;
@@ -47,7 +49,7 @@ AVCodec *pCodec_Video_out;
 AVStream *pStream_Audio;
 AVStream *pStream_Video;
 AVFrame *pFrame_Audio;
-// AVFrame *pFrame_Audio_play;音频无需经过处理直接播放
+//音频无需经过处理直接播放
 AVFrame *pFrame_Audio_out;
 AVFrame *pFrame_Video_in;
 AVFrame *pFrame_Video_YUV;
@@ -58,11 +60,12 @@ AVPacket *pPacket_Audio_play;
 AVPacket *pPacket_Video;
 AVPacket *pPacket_Video_out;
 AVPacket *pPacket_Video_play;
-AVPacket *pPacket; //未使用
 
-AVDictionary *pDict = NULL;
+AVPacket *pPacket;
 SwrContext *pSwrCtx;
 SwsContext *pSwsCtx;
+
+AVDictionary *pDict = NULL;
 
 // Audio
 SDL_AudioSpec sdl_audios;
@@ -79,7 +82,7 @@ AVSampleFormat audio_format;
 // Audio rollback
 uint8_t *audio_buffer;      // chunk
 uint32_t audio_buffer_size; // len
-uint8_t audio_buffer_pos;   // pos  若是数组 记得avmalloc
+uint8_t audio_buffer_pos;   // pos  若是数组 需要avmalloc
 
 int audio_packet_size;
 int audio_packet_data;
@@ -97,6 +100,11 @@ int fps;
 AVPixelFormat video_format;
 int video_buffer_size;
 uint8_t *video_buffer;
+///-
+
+int video_buffer_size_test;
+uint8_t *video_buffer_test;
+
 // other
 SDL_mutex *play_mutex;
 
@@ -137,11 +145,16 @@ int audio_decode(void *)
     int data_size = 0;
 
     int out_nb_sample = 0;
-    FILE *testfile = fopen("pcm.pcm", "wb");
-    if (!testfile)
-        ErrorExit("file open fail");
+    ///-FILE *testfile = fopen("pcm.pcm", "wb");
+    /// if (!testfile)
+    ///    ErrorExit("file open fail");
     while (1)
     {
+        if (quitFlag)
+            break;
+
+        while (stopFlag)
+            ;
 
         if (packet_pop_queue(audio_queue, pPacket_Audio_play))
         {
@@ -170,7 +183,6 @@ int audio_decode(void *)
 
             audio_buffer_size = out_nb_sample * out_nb_channel_layout * av_get_bytes_per_sample(audio_format);
             // pFrame_Audio->linesize[0];
-            // fwrite(pFrame_Audio->data[0], 1, pFrame_Audio->linesize[0], testfile);
 
             audio_buffer_pos = 0;
 
@@ -178,16 +190,15 @@ int audio_decode(void *)
             {
                 SDL_Delay(1);
             }
-
             av_packet_unref(pPacket_Audio_play);
         }
     }
-
-    return -1;
+    return 0;
 }
 //音频回调函数,播放音频用
 void audio_callback(void *udata, Uint8 *stream, int len)
 {
+    // std::cout << "audio_callback:" << pthread_self() << endl;
     SDL_memset(stream, 0, len);
 
     while (len > 0)
@@ -196,8 +207,6 @@ void audio_callback(void *udata, Uint8 *stream, int len)
             continue;
         int temp = (len > audio_buffer_size ? audio_buffer_size : len);
         SDL_MixAudio(stream, audio_buffer + audio_buffer_pos, temp, SDL_MIX_MAXVOLUME);
-
-        cout << "len temp audio_len:" << len << " " << temp << " " << audio_buffer_size << endl;
 
         audio_buffer_pos += temp;
         stream += temp;
@@ -208,24 +217,20 @@ void audio_callback(void *udata, Uint8 *stream, int len)
 }
 //空间分配init
 int init()
-{
-    //音视频输入上下文
+{ ///-iii
     pFormatCtx_Audio = avformat_alloc_context();
     pFormatCtx_Video = avformat_alloc_context();
     if (!pFormatCtx_Audio || !pFormatCtx_Video)
         ErrorExit("pFormatCtx alloc fail");
 
-    //音视频帧
     pFrame_Audio = av_frame_alloc();
     pFrame_Audio_out = av_frame_alloc();
     pFrame_Video_in = av_frame_alloc();
     pFrame_Video_out = av_frame_alloc();
     pFrame_Video_YUV = av_frame_alloc();
-
-    if (!pFrame_Audio || !pFrame_Audio_out || !pFrame_Video_in || !pFrame_Video_out || !pFrame_Video_YUV)
+    if (!pFrame_Audio || !pFrame_Video_in || !pFrame_Video_out || !pFrame_Audio_out || !pFrame_Video_YUV)
         ErrorExit("pFrame alloc fail");
 
-    //音视频包
     pPacket_Video = av_packet_alloc();
     pPacket_Audio = av_packet_alloc();
     pPacket = av_packet_alloc();
@@ -233,21 +238,22 @@ int init()
     pPacket_Audio_play = av_packet_alloc();
     pPacket_Audio_out = av_packet_alloc();
     pPacket_Video_out = av_packet_alloc();
+    av_init_packet(pPacket_Video_out);
+    av_init_packet(pPacket_Video_play);
+    av_init_packet(pPacket_Video);
     if (!pPacket_Video || !pPacket_Audio || !pPacket || !pPacket_Video_out || !pPacket_Audio_play ||
         !pPacket_Video_play || !pPacket_Audio_out)
         ErrorExit("pPacket alloc fail");
 
-    //音频渲染器
     pSwrCtx = swr_alloc();
     if (!pSwrCtx)
         ErrorExit("pSwrCtx alloc fail");
 
-    //音视频包队列
     audio_queue = (PacketQueue *)av_malloc(sizeof(PacketQueue));
     video_queue = (PacketQueue *)av_malloc(sizeof(PacketQueue));
     if (!audio_queue || !video_queue)
         ErrorExit("queue alloc fail");
-    ///-编码器在sdl_init alloc
+
     return 0;
 }
 //更新sdl以及输入输出音频信息
@@ -257,7 +263,6 @@ int sdl_init(int isVideo)
     if (re != 0)
         ErrorExit("SDL Init Error");
     void (*pcallback)(void *, Uint8 *, int) = &audio_callback;
-    cout << "比特率：" << pCodecCtx_Video->bit_rate << endl << pCodecCtx_Audio->bit_rate; ///-bitrate
 
     switch (isVideo)
     {
@@ -267,21 +272,17 @@ int sdl_init(int isVideo)
 
             in_channel_layout = av_get_default_channel_layout(pCodecCtx_Audio->channels);
             in_nb_channel_layout = av_get_channel_layout_nb_channels(in_channel_layout);
-            out_channel_layout = AV_CH_FRONT_LEFT | AV_CH_FRONT_RIGHT; // AV_CH_FRONT_STEREO //播放声道
-            out_nb_channel_layout = av_get_channel_layout_nb_channels(out_channel_layout); //声道数
+            out_channel_layout = AV_CH_FRONT_LEFT | AV_CH_FRONT_RIGHT; ////fix1
+            out_nb_channel_layout = av_get_channel_layout_nb_channels(out_channel_layout);
             sample_rate = pCodecCtx_Audio->sample_rate;
-            nb_sample = 1024; // mp3 1152;aac 1024
-            cout << "输入声道和声道数量:" << in_channel_layout << " " << in_nb_channel_layout << endl; ///-2 1
-
-            cout << "输出声道和声道数量:" << out_channel_layout << " " << out_nb_channel_layout << endl; ///- 2 2
-            cout << "sample_rate，frame_size一帧数据量:" << pCodecCtx_Audio->sample_rate << " "
-                 << pCodecCtx_Audio->frame_size << endl; ///-
+            nb_sample = 1152; ////fix2
 
             sdl_audios.freq = sample_rate;    //采样率
             sdl_audios.format = AUDIO_S16SYS; //
-            sdl_audios.channels = in_nb_channel_layout;
+            sdl_audios.channels = out_nb_channel_layout;
             sdl_audios.silence = 0; //静音
             sdl_audios.samples = nb_sample;
+            // sdl_audios.size = 256;
             sdl_audios.callback = pcallback;
             sdl_audios.userdata = pCodecCtx_Audio;
 
@@ -303,8 +304,6 @@ int sdl_init(int isVideo)
             break;
         case 1:
             // video state init
-            width = pCodecCtx_Video->width;
-            height = pCodecCtx_Video->height;
             video_format = pCodecCtx_Video->pix_fmt;
 
             // video sdl init
@@ -323,7 +322,7 @@ int sdl_init(int isVideo)
 
             play_mutex = SDL_CreateMutex();
             // video resample
-
+            cout << "sdl_init:w" << width << endl;                                                                ///-
             pSwsCtx = sws_getCachedContext(pSwsCtx,                                                               //
                                            width, height, video_format == -1 ? AV_PIX_FMT_YUV420P : video_format, //源
                                            width, height, SDL_PLAY_PIX_FMT, //目标
@@ -335,7 +334,12 @@ int sdl_init(int isVideo)
             // av_image_get_buffer_size();
             video_buffer = (uint8_t *)av_malloc(video_buffer_size);
             avpicture_fill((AVPicture *)pFrame_Video_YUV, video_buffer, SDL_PLAY_PIX_FMT, width, height);
-            // av_image_fill_arrays();
+
+            video_buffer_size_test = avpicture_get_size(SDL_PLAY_PIX_FMT, width, height);
+            video_buffer_test = (uint8_t *)av_malloc(video_buffer_size_test);
+            // avpicture_fill((AVPicture *)pFrame_Video_out, video_buffer_test, SDL_PLAY_PIX_FMT, width, height);
+            av_image_fill_arrays(pFrame_Video_out->data, pFrame_Video_out->linesize, video_buffer_test,
+                                 pCodecCtx_Video->pix_fmt, pCodecCtx_Video->width, pCodecCtx_Video->height, 1);
             break;
         default:
             break;
@@ -350,6 +354,14 @@ int packet_queue_init(PacketQueue *queue)
     queue->queue_mutex = SDL_CreateMutex();
     queue->queue_notempty = SDL_CreateCond();
     queue->queue_notfull = SDL_CreateCond();
+
+    return 0;
+}
+int packet_queue_destroy(PacketQueue *queue)
+{
+    SDL_DestroyMutex(queue->queue_mutex);
+    SDL_DestroyCond(queue->queue_notempty);
+    SDL_DestroyCond(queue->queue_notfull);
 
     return 0;
 }
@@ -380,65 +392,59 @@ int device_init()
 }
 void destroy()
 {
-    //音视频输入格式上下文
+
+    cout << "sdl销毁" << flush << endl;
+    // SDL_CloseAudio();
+    // SDL_DestroyWindow(sdl_screen);
+    // SDL_Quit();
+    cout << "sdl销毁完成" << flush << endl;
+
     if (pFormatCtx_Audio)
         avformat_free_context(pFormatCtx_Audio);
     if (pFormatCtx_Video)
         avformat_free_context(pFormatCtx_Video);
+    cout << "上下文销毁完成" << flush << endl;
 
-    //音视频编解码器
     if (pCodecCtx_Audio)
         avcodec_free_context(&pCodecCtx_Audio);
-    if (pCodecCtx_Audio_out)
-        avcodec_free_context(&pCodecCtx_Audio_out);
     if (pCodecCtx_Video)
         avcodec_free_context(&pCodecCtx_Video);
+    if (pCodecCtx_Audio_out)
+        avcodec_free_context(&pCodecCtx_Audio_out);
     if (pCodecCtx_Video_out)
         avcodec_free_context(&pCodecCtx_Video_out);
+    cout << "编解码器销毁完成" << flush << endl;
 
-    //音视频编解码包
     if (pPacket)
         av_packet_free(&pPacket);
     if (pPacket_Audio)
         av_packet_free(&pPacket_Audio);
-    if (pPacket_Audio_play)
-        av_packet_free(&pPacket_Audio_play);
-    if (pPacket_Audio_out)
-        av_packet_free(&pPacket_Audio_out);
     if (pPacket_Video)
         av_packet_free(&pPacket_Video);
-    if (pPacket_Video_play)
-        av_packet_free(&pPacket_Video_play);
-    if (pPacket_Video_out)
-        av_packet_free(&pPacket_Video_out);
 
-    //音视频输入输出帧
-    if (pFrame_Audio)
-        av_frame_free(&pFrame_Audio);
-    if (pFrame_Audio_out)
-        av_frame_free(&pFrame_Audio_out);
-    if (pFrame_Video_in)
-        av_frame_free(&pFrame_Video_in);
-    if (pFrame_Video_YUV)
-        av_frame_free(&pFrame_Video_YUV);
-    if (pFrame_Video_out)
-        av_frame_free(&pFrame_Video_out);
+    cout << "包销毁完成" << flush << endl;
 
-    //视频渲染窗口
-    SDL_DestroyWindow(sdl_screen);
-    SDL_Quit();
-
-    //音视频数据空间
     if (audio_buffer)
         av_free(audio_buffer);
     if (video_buffer)
         av_free(video_buffer);
+    cout << "buffer销毁完成" << flush << endl;
 
-    //音视频帧队列
     if (audio_queue)
+    {
+        packet_queue_destroy(audio_queue);
         av_free(audio_queue);
+    }
     if (video_queue)
+    {
+        packet_queue_destroy(video_queue);
         av_free(video_queue);
+    }
+    cout << "queue销毁完成" << flush << endl;
+    avcodec_close(pCodecCtx_Audio);
+    avcodec_close(pCodecCtx_Audio_out);
+    avcodec_close(pCodecCtx_Video);
+    avcodec_close(pCodecCtx_Video_out);
 }
 void dumpArg(int isAudio) { std::string format; }
 int stream_init(AVFormatContext *pFormatCtx)
@@ -470,26 +476,25 @@ int stream_init(AVFormatContext *pFormatCtx)
         }
         else if (pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
         {
+            width = pFormatCtx->streams[i]->codecpar->width;
+            height = pFormatCtx->streams[i]->codecpar->height;
             video_stream_index = i;
             pStream_Video = pFormatCtx->streams[i];
             //查找解码器
             pCodec_Video = avcodec_find_decoder(pStream_Video->codecpar->codec_id);
-
             if (!pCodec_Video)
                 ErrorExit("Cant find Video decoder");
-            //分配解码器
+            //分配、复制、打开解码器
             pCodecCtx_Video = avcodec_alloc_context3(pCodec_Video);
-            if (!pCodecCtx_Video || !pCodecCtx_Video_out)
+            if (!pCodecCtx_Video)
                 ErrorExit("Alloc Video CodecCtx Fail");
-            //复制解码器参数
             re = avcodec_parameters_to_context(pCodecCtx_Video, pStream_Video->codecpar);
             if (re < 0)
                 ErrorExit("Video Stream parameters Copy to CodecCtx Fail ");
-            //打开解码器
             re = avcodec_open2(pCodecCtx_Video, pCodec_Video, nullptr);
             if (re != 0)
                 ErrorExit("Open Codec Fail");
-            //其他信息
+            //
             fps = r2d(pCodecCtx_Video->framerate) == 0 ? 25 : r2d(pCodecCtx_Video->framerate);
 
             sdl_init(1);
@@ -504,8 +509,11 @@ int demux_video(void *)
     ///-ddd
     while (1)
     {
-        if (quitFlag || stopFlag)
+        if (quitFlag)
             break;
+
+        while (stopFlag)
+            ;
 
         if (video_queue->size >= MAX_VIDEO_QUEUE_SIZE)
         {
@@ -538,20 +546,20 @@ int demux(void *)
     re = avformat_find_stream_info(pFormatCtx_Audio, NULL);
     av_dump_format(pFormatCtx_Audio, 0, 0, 0);
 
-    stream_init(pFormatCtx_Audio);
-    stream_init(pFormatCtx_Video);
-
     //读包
     SDL_CreateThread(demux_video, "demux_video", pFormatCtx_Video);
 
     while (1)
     {
-        if (quitFlag || stopFlag)
+        if (quitFlag)
             break;
+
+        while (stopFlag)
+            ;
 
         if (audio_queue->size >= MAX_AUDIO_QUEUE_SIZE)
         {
-            cout << "音频队列满" << endl;
+            cout << "音频队列满了！" << endl;
             SDL_CondSignal(audio_queue->queue_notempty);
             continue;
         }
@@ -566,6 +574,7 @@ int demux(void *)
             packet_push_queue(audio_queue, pPacket_Audio);
         }
     }
+    return 0;
 }
 // planC
 
@@ -651,8 +660,10 @@ void sdl_play_video(uint8_t *YPlane, int Ylinesize, uint8_t *UPlane, int Ulinesi
 }
 int encode_init()
 {
-    ///-处理encode的编码上下文
+    ///-eee
+
     //创建编码器
+
     pCodec_Video_out = avcodec_find_decoder(AV_CODEC_ID_H264);
     pCodec_Audio_out = avcodec_find_decoder(AV_CODEC_ID_AAC);
     if (!pCodec_Video_out || !pCodec_Audio_out)
@@ -661,13 +672,20 @@ int encode_init()
     pCodecCtx_Audio_out = avcodec_alloc_context3(pCodec_Audio_out);
     if (!pCodecCtx_Video_out || !pCodecCtx_Audio_out)
         ErrorExit("Cant create Video or Audio encoder CodecCtx");
+
     //设置编码器参数
+    AVDictionary *parameter_audio = NULL;
+    AVDictionary *parameter_video = NULL;
+
     // audio
-    pCodecCtx_Audio_out->bit_rate = 64000;
+    pCodecCtx_Audio_out->bit_rate = 64000;          // n kb/s*1000
     pCodecCtx_Audio_out->sample_rate = sample_rate; //输入的采样率  测试:48000
     pCodecCtx_Audio_out->sample_fmt = AV_SAMPLE_FMT_FLTP;
-    pCodecCtx_Audio_out->channel_layout = AV_CH_FRONT_STERRO; //左||右声道:3
+    pCodecCtx_Audio_out->channel_layout = AV_CH_LAYOUT_STEREO; //左||右声道:3
     pCodecCtx_Audio_out->channels = out_nb_channel_layout;
+
+    av_dict_set(&parameter_audio, "preset", "slow", 0);
+    av_dict_set(&parameter_audio, "tune", "zerolatency", 0);
     // video
 
     pCodecCtx_Video_out->flags |= AV_CODEC_FLAG_GLOBAL_HEADER; //便于输出获取
@@ -675,22 +693,38 @@ int encode_init()
     pCodecCtx_Video_out->thread_count = 2; //线程数量
 
     pCodecCtx_Video_out->bit_rate = 200 * 1024 * 8; //压缩后每秒视频的比特位大小：200kB
-    pCodecCtx_Video_out->width = pCodecCtx_Video->width;
-    pCodecCtx_Video_out->height = pCodecCtx_Video->height;
+    pCodecCtx_Video_out->width = width;
+    pCodecCtx_Video_out->height = height;
+
     pCodecCtx_Video_out->time_base = {1, fps}; // 1,fps
-    pCodecCtx_Video_out->framerate = {fps, 1}; // fps,1
+    pCodecCtx_Video_out->framerate = {fps, 1}; //{ fps,1 }
 
     //画面组大小，多少帧一个关键帧
     pCodecCtx_Video_out->gop_size = 200;
     pCodecCtx_Video_out->max_b_frames = 10; //最大b帧
     pCodecCtx_Video_out->pix_fmt = AV_PIX_FMT_YUV420P;
+    //量化。
 
     //打开音视频编码器
-    re = avcodec_open2(pCodecCtx_Video_out, pCodec_Video_out, nullptr);
+    re = avcodec_open2(pCodecCtx_Video_out, pCodec_Video_out, &parameter_audio);
     if (re != 0)
-        ErrorExit("Open Codec Fail");
+        ErrorExit("Open pCodec_Video_out Fail");
+    re = avcodec_open2(pCodecCtx_Audio_out, pCodec_Audio_out, &parameter_video);
+    if (re != 0)
+        ErrorExit("Open pCodec_Audio_out Fail");
 }
-
+inline void encode_video(AVFrame *pFrame)
+{
+    avcodec_send_frame(pCodecCtx_Video_out, pFrame);
+    avcodec_receive_packet(pCodecCtx_Video_out, pPacket_Video_out);
+    // return pPacket_Video_out;
+}
+inline void encode_audio(AVFrame *pFrame)
+{
+    avcodec_send_frame(pCodecCtx_Audio_out, pFrame);
+    avcodec_receive_packet(pCodecCtx_Audio_out, pPacket_Audio_out);
+    // return pPacket_Audio_out;
+}
 int video_decode(void *)
 {
     ///-vvv
@@ -699,6 +733,11 @@ int video_decode(void *)
     std::cout << pthread_self() << endl;
     while (1)
     {
+        if (quitFlag)
+            break;
+
+        while (stopFlag)
+            ;
         if (packet_pop_queue(video_queue, pPacket_Video_play))
         {
             std::cout << "video packet_pop_queue fail" << std::endl;
@@ -716,14 +755,32 @@ int video_decode(void *)
                       pFrame_Video_in->data, pFrame_Video_in->linesize, 0, pCodecCtx_Video->height, //源数据
                       pFrame_Video_YUV->data, pFrame_Video_YUV->linesize); //重采样到YUV进行播放
 
+            // encode_video(pFrame_Video_in);
+
+            // re = avcodec_send_packet(pCodecCtx_Video, pPacket_Video_out);
+            // cout << "重解码re" << re << " ";
+            // avcodec_receive_frame(pCodecCtx_Video, pFrame_Video_out);
+            cout << "重解帧re" << re << " " << endl;
+            cout << "宽" << pFrame_Video_out->width << endl;
+            cout << "关键帧" << pFrame_Video_out->key_frame << endl;
+            cout << "时间戳" << pFrame_Video_in->pts << endl;
+            cout << "时间戳" << pFrame_Video_YUV->pts << endl;
+            cout << "时间戳" << pFrame_Video_out->pts << endl;
+            // sws_scale(pSwsCtx,                                                                        //
+            //         pFrame_Video_out->data, pFrame_Video_out->linesize, 0, pCodecCtx_Video->height, //源数据
+            //         pFrame_Video_YUV->data, pFrame_Video_YUV->linesize);
+            cout << "play" << endl;
             sdl_play_video(pFrame_Video_YUV->data[0], pFrame_Video_YUV->linesize[0], //
                            pFrame_Video_YUV->data[1], pFrame_Video_YUV->linesize[1], //
                            pFrame_Video_YUV->data[2], pFrame_Video_YUV->linesize[2]);
             /// encode
         }
 
+        av_packet_unref(pPacket_Video_out);
         av_packet_unref(pPacket_Video_play);
     }
+    SDL_DestroyWindow(sdl_screen);
+    SDL_Quit();
     return 0;
 }
 
@@ -732,7 +789,7 @@ int ErrorExit(int errorNum)
     char *errorInfo;
     av_strerror(errorNum, errorInfo, sizeof(errorInfo)); //提取错误信息,打印退出
     std::cout << " Error: " << errorNum << " " << errorInfo << std::endl;
-    destroy();
+    // destroy();
     exit(-1);
 }
 int ErrorExit(std::string errorStr)
@@ -760,10 +817,14 @@ int test(int argc, char *argv[])
 }
 void testmain()
 {
+    init();
+    device_init();
+    stream_init(pFormatCtx_Audio);
+    stream_init(pFormatCtx_Video);
+    packet_queue_init(audio_queue);
+    packet_queue_init(video_queue);
 
-    if (init() || device_init() || packet_queue_init(audio_queue) || packet_queue_init(video_queue))
-        ErrorExit("init fail");
-
+    encode_init();
     std::cout << "main:init end\n";
     std::cout << "main tid:" << pthread_self() << std::endl;
 
@@ -771,12 +832,26 @@ void testmain()
     SDL_Delay(5);
     SDL_CreateThread(video_decode, "video_decode thread", NULL);
     SDL_CreateThread(audio_decode, "audio_decode thread", NULL);
-    sleep(1);
 
     ///-pFormatCtx->flags |= AVFMT_FLAG_NONBLOCK;
 
+    /// SDL_PauseAudio(1);
+    SDL_Event event;
     while (1)
     {
+        SDL_WaitEvent(&event);
+        switch (event.type)
+        {
+            case SDL_QUIT:
+                quitFlag = 1;
+                // SDL_CloseAudio();
+                destroy();
+                exit(0);
+                break;
+            default:
+                cout << "其他事件" << endl;
+                break;
+        }
         cout << flush;
     }
 }
@@ -787,3 +862,9 @@ int main(int argc, char *argv[])
     testmain();
     return 0;
 }
+//主线程：事件处理
+// demux 音频线程：read
+// demux 视频线程：read
+// decode 音频线程：send&receive encode
+// decode 视频线程：send&receive play encode
+// SDL音频线程（系统调用）
