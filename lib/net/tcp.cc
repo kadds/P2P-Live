@@ -319,6 +319,8 @@ void client_t::wait_server(socket_addr_t address, microsecond_t timeout)
         {
             if (io_result::timeout == ret)
                 error_handler(*this, socket, address, connection_state::timeout);
+            else if (io_result::failed == ret)
+                error_handler(*this, socket, address, connection_state::connection_refuse);
             else
                 error_handler(*this, socket, address, connection_state::closed);
         }

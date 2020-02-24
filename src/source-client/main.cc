@@ -10,6 +10,7 @@ extern "C" {
 #include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
 }
+#include "peer.hpp"
 #include <QtWidgets>
 #include <glog/logging.h>
 #include <iostream>
@@ -864,6 +865,8 @@ int main(int argc, char *argv[])
 {
     Log(argv);
     // test(argc, argv);
+    init_peer(1, net::socket_addr_t("127.0.0.1", 2769), net::make_timespan(2));
+
     testmain();
     return 0;
 }

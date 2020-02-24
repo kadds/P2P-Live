@@ -338,6 +338,7 @@ class tracker_node_client_t
     using nodes_connect_handler_t = std::function<void(tracker_node_client_t &, peer_node_t)>;
     using error_handler_t = std::function<void(tracker_node_client_t &, socket_addr_t addr, connection_state)>;
     using disconnect_handler_t = std::function<void(tracker_node_client_t &)>;
+    using tracker_connect_handler_t = std::function<void(tracker_node_client_t &, socket_addr_t )>;
 
   private:
     tcp::client_t client;
@@ -352,7 +353,7 @@ class tracker_node_client_t
     trackers_update_handler_t tracker_update_handler;
     nodes_connect_handler_t connect_handler;
     error_handler_t error_handler;
-
+    tracker_connect_handler_t tracker_connect_handler;
     u64 sid;
     microsecond_t timeout;
     bool request_trackers;
@@ -390,6 +391,8 @@ class tracker_node_client_t
     tracker_node_client_t &on_node_request_connect(nodes_connect_handler_t handler);
 
     tracker_node_client_t &on_error(error_handler_t handler);
+
+    tracker_node_client_t &on_tracker_server_connect(tracker_connect_handler_t handler);
 
     socket_t *get_socket() const { return client.get_socket(); }
 

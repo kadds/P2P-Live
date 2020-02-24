@@ -36,6 +36,7 @@ enum event_strategy
     select,
     epoll,
     IOCP,
+    best,
 };
 
 class event_demultiplexer

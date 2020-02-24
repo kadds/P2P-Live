@@ -47,6 +47,8 @@ void peer_t::accept_channels(const std::vector<channel_t> &channels) { this->cha
 peer_info_t *peer_t::add_peer()
 {
     auto peer = std::make_unique<peer_info_t>();
+    peer->sid = 0;
+    peer->has_connect = false;
     auto ptr = peer.get();
     noconnect_peers.emplace_back(std::move(peer));
     return ptr;
@@ -175,10 +177,11 @@ void peer_t::main(rudp_connection_t conn)
                 continue;
             peer_init_request_t *request = (peer_init_request_t *)data.get();
             endian::cast_inplace(*request, recv_buffer);
-            if (request->sid != sid)
+            if ((sid != 0 && request->sid != 0) && request->sid != sid)
                 continue;
 
             peer->last_ping = get_timestamp();
+            peer->sid = sid;
 
             if (peer->has_connect)
                 continue;
@@ -225,7 +228,7 @@ void peer_t::main(rudp_connection_t conn)
             endian::cast_inplace(*respond, recv_buffer);
             recv_buffer.walk_step(sizeof(peer_meta_respond_t));
             if (meta_recv_handler)
-                meta_recv_handler(*this, recv_buffer, respond->key, peer);
+                meta_recv_handler(*this, peer, recv_buffer, respond->key);
         }
         else if (type == peer_msg_type::fragment_request)
         {
@@ -275,7 +278,7 @@ void peer_t::main(rudp_connection_t conn)
             {
                 chq.fragment_recv_buffer_cache.expect().origin_length();
                 if (fragment_recv_handler)
-                    fragment_recv_handler(*this, chq.fragment_recv_buffer_cache, chq.fragment_recv_id, peer);
+                    fragment_recv_handler(*this, peer, chq.fragment_recv_buffer_cache, chq.fragment_recv_id);
                 chq.fragment_recv_buffer_cache = {};
             }
         }
@@ -302,7 +305,7 @@ void peer_t::main(rudp_connection_t conn)
             {
                 chq.fragment_recv_buffer_cache.expect().origin_length();
                 if (fragment_recv_handler)
-                    fragment_recv_handler(*this, chq.fragment_recv_buffer_cache, chq.fragment_recv_id, peer);
+                    fragment_recv_handler(*this, peer, chq.fragment_recv_buffer_cache, chq.fragment_recv_id);
                 chq.fragment_recv_buffer_cache = {};
             }
         }
@@ -325,7 +328,6 @@ void peer_t::connect_to_peer(peer_info_t *peer, socket_addr_t remote_addr)
     {
         if (it->get() == peer)
         {
-
             peers.emplace(remote_addr, std::move(*it));
             noconnect_peers.erase(it);
 

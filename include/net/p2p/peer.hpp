@@ -159,6 +159,7 @@ struct peer_info_t
     std::unordered_map<channel_t, channel_info_t> channel;
 
     socket_addr_t remote_address;
+    u64 sid;
     microsecond_t last_ping;
     bool has_connect;
     peer_info_t()
@@ -179,7 +180,7 @@ struct peer_hash_t
 class peer_t
 {
   public:
-    using peer_data_recv_t = std::function<void(peer_t &, socket_buffer_t &, u64 id_key, peer_info_t *)>;
+    using peer_data_recv_t = std::function<void(peer_t &, peer_info_t *, socket_buffer_t &, u64 id_key)>;
     using peer_disconnect_t = std::function<void(peer_t &, peer_info_t *)>;
     using peer_connect_ok_t = std::function<void(peer_t &, peer_info_t *)>;
 
