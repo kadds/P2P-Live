@@ -69,15 +69,15 @@ TEST(PeerTest, DataTransport)
 
     int x = 0;
     client.on_peer_connect([](peer_t &client, peer_info_t *peer) { client.pull_meta_data(peer, 0, 1); })
-        .on_meta_data_recv([&ctx, &name](peer_t &client, socket_buffer_t &buffer, u64 key, peer_info_t *peer) {
+        .on_meta_data_recv([&ctx, &name](peer_t &client, peer_info_t *peer, socket_buffer_t &buffer, u64 key) {
             GTEST_ASSERT_EQ(key, 0);
             GTEST_ASSERT_EQ(buffer.get_length(), name.size());
             std::string str = buffer.to_string();
             GTEST_ASSERT_EQ(str, name);
             client.pull_fragment_from_peer(peer, {1, 2}, 1, 0);
         })
-        .on_fragment_recv([&ctx, &name, &x, test_size_bytes](peer_t &client, socket_buffer_t &buffer, fragment_id_t id,
-                                                             peer_info_t *peer) {
+        .on_fragment_recv([&ctx, &name, &x, test_size_bytes](peer_t &client, peer_info_t *peer, socket_buffer_t &buffer,
+                                                             fragment_id_t id) {
             GTEST_ASSERT_EQ(buffer.get_length(), test_size_bytes);
             GTEST_ASSERT_EQ(buffer.get()[test_size_bytes - 1], id);
             x++;

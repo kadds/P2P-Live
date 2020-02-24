@@ -10,6 +10,7 @@ extern "C" {
 #include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
 }
+#include "peer.hpp"
 #include <QtWidgets>
 #include <glog/logging.h>
 #include <iostream>
@@ -712,6 +713,7 @@ int encode_init()
     re = avcodec_open2(pCodecCtx_Audio_out, pCodec_Audio_out, &parameter_video);
     if (re != 0)
         ErrorExit("Open pCodec_Audio_out Fail");
+    return 0;
 }
 inline void encode_video(AVFrame *pFrame)
 {
@@ -859,6 +861,8 @@ int main(int argc, char *argv[])
 {
     Log(argv);
     // test(argc, argv);
+    init_peer(1, net::socket_addr_t("127.0.0.1", 2769), net::make_timespan(2));
+
     testmain();
     return 0;
 }

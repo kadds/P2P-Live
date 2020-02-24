@@ -591,6 +591,9 @@ void tracker_node_client_t::main(tcp::connection_t conn)
     /// first get network address info
     update_info(conn);
 
+    if (tracker_connect_handler)
+        tracker_connect_handler(*this, conn.get_socket()->remote_addr());
+
     while (1)
     {
         if (request_trackers)
@@ -838,6 +841,12 @@ tracker_node_client_t &tracker_node_client_t::on_trackers_update(trackers_update
 tracker_node_client_t &tracker_node_client_t::on_error(error_handler_t handler)
 {
     error_handler = handler;
+    return *this;
+}
+
+tracker_node_client_t &tracker_node_client_t::on_tracker_server_connect(tracker_connect_handler_t handler)
+{
+    tracker_connect_handler = handler;
     return *this;
 }
 
