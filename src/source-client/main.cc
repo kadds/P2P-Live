@@ -176,9 +176,10 @@ int audio_decode(void *)
             data_size = 2 * pFrame_Audio->nb_samples * 2;
             if (data_size <= buf_size)
                 ErrorExit("audio data size<=buf_size");*/
-
+            memset(audio_buffer, 0, audio_buffer_size);
             out_nb_sample = swr_convert(pSwrCtx, &audio_buffer, MAX_AUDIO_FRAME_SIZE,
                                         (const uint8_t **)pFrame_Audio->data, pFrame_Audio->nb_samples);
+
             audio_buffer = pFrame_Audio->data[0]; //! fix audio play bug
 
             audio_buffer_size = out_nb_sample * out_nb_channel_layout * av_get_bytes_per_sample(audio_format);
@@ -330,14 +331,14 @@ int sdl_init(int isVideo)
                                            0, 0, 0);
 
             // video buffer
-            video_buffer_size = avpicture_get_size(SDL_PLAY_PIX_FMT, width, height);
-            // av_image_get_buffer_size();
+            video_buffer_size = av_image_get_buffer_size(SDL_PLAY_PIX_FMT, width, height, 1);
             video_buffer = (uint8_t *)av_malloc(video_buffer_size);
-            avpicture_fill((AVPicture *)pFrame_Video_YUV, video_buffer, SDL_PLAY_PIX_FMT, width, height);
+            memset(video_buffer, 0, video_buffer_size);
+            av_image_fill_arrays(pFrame_Video_YUV->data, pFrame_Video_YUV->linesize, video_buffer, SDL_PLAY_PIX_FMT,
+                                 width, height, 1);
 
-            video_buffer_size_test = avpicture_get_size(SDL_PLAY_PIX_FMT, width, height);
+            video_buffer_size_test = av_image_get_buffer_size(SDL_PLAY_PIX_FMT, width, height, 1);
             video_buffer_test = (uint8_t *)av_malloc(video_buffer_size_test);
-            // avpicture_fill((AVPicture *)pFrame_Video_out, video_buffer_test, SDL_PLAY_PIX_FMT, width, height);
             av_image_fill_arrays(pFrame_Video_out->data, pFrame_Video_out->linesize, video_buffer_test,
                                  pCodecCtx_Video->pix_fmt, pCodecCtx_Video->width, pCodecCtx_Video->height, 1);
             break;
@@ -446,7 +447,6 @@ void destroy()
     avcodec_close(pCodecCtx_Video);
     avcodec_close(pCodecCtx_Video_out);
 }
-void dumpArg(int isAudio) { std::string format; }
 int stream_init(AVFormatContext *pFormatCtx)
 {
     //流初始化
@@ -534,6 +534,7 @@ int demux_video(void *)
             packet_push_queue(video_queue, pPacket_Video);
         }
     }
+    return 0;
 }
 int demux(void *)
 {
@@ -712,6 +713,7 @@ int encode_init()
     re = avcodec_open2(pCodecCtx_Audio_out, pCodec_Audio_out, &parameter_video);
     if (re != 0)
         ErrorExit("Open pCodec_Audio_out Fail");
+    return 0;
 }
 inline void encode_video(AVFrame *pFrame)
 {
@@ -760,7 +762,7 @@ int video_decode(void *)
             // re = avcodec_send_packet(pCodecCtx_Video, pPacket_Video_out);
             // cout << "重解码re" << re << " ";
             // avcodec_receive_frame(pCodecCtx_Video, pFrame_Video_out);
-            cout << "重解帧re" << re << " " << endl;
+            /*cout << "重解帧re" << re << " " << endl;
             cout << "宽" << pFrame_Video_out->width << endl;
             cout << "关键帧" << pFrame_Video_out->key_frame << endl;
             cout << "时间戳" << pFrame_Video_in->pts << endl;
@@ -769,7 +771,7 @@ int video_decode(void *)
             // sws_scale(pSwsCtx,                                                                        //
             //         pFrame_Video_out->data, pFrame_Video_out->linesize, 0, pCodecCtx_Video->height, //源数据
             //         pFrame_Video_YUV->data, pFrame_Video_YUV->linesize);
-            cout << "play" << endl;
+            cout << "play" << endl;*/
             sdl_play_video(pFrame_Video_YUV->data[0], pFrame_Video_YUV->linesize[0], //
                            pFrame_Video_YUV->data[1], pFrame_Video_YUV->linesize[1], //
                            pFrame_Video_YUV->data[2], pFrame_Video_YUV->linesize[2]);
@@ -791,12 +793,14 @@ int ErrorExit(int errorNum)
     std::cout << " Error: " << errorNum << " " << errorInfo << std::endl;
     // destroy();
     exit(-1);
+    return 0;
 }
 int ErrorExit(std::string errorStr)
 {
     std::cout << " Error: " << errorStr << std::endl;
     destroy();
     exit(-1);
+    return 0;
 }
 int ErrorExit(int errorNum, std::string errorStr)
 {
@@ -805,6 +809,7 @@ int ErrorExit(int errorNum, std::string errorStr)
     std::cout << " Error: " << errorNum << " " << errorInfo << "    " << errorStr << std::endl;
     destroy();
     exit(-1);
+    return 0;
 }
 int test(int argc, char *argv[])
 { // std::cout  << fps << std::endl << r2d(pCodecCtx_Video->framerate);
@@ -845,11 +850,11 @@ void testmain()
             case SDL_QUIT:
                 quitFlag = 1;
                 // SDL_CloseAudio();
-                destroy();
+                // destroy();
                 exit(0);
                 break;
             default:
-                cout << "其他事件" << endl;
+                // cout << "其他事件" << endl;
                 break;
         }
         cout << flush;
