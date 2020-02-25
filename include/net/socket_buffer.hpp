@@ -49,15 +49,18 @@ class socket_buffer_t
     ~socket_buffer_t();
 
     byte *get_base_ptr() const { return ptr; }
+    /// get pointer current offset
     byte *get() const { return ptr + walk_offset; }
 
     u64 get_data_length() const { return valid_data_length; }
     u64 get_buffer_origin_length() const { return buffer_size; }
 
+    /// get data length start at current offset
     u64 get_length() const { return valid_data_length - walk_offset; }
 
     u64 get_walk_offset() const { return walk_offset; }
 
+    /// reset offset and set data length to offset
     void finish_walk()
     {
         valid_data_length = walk_offset;

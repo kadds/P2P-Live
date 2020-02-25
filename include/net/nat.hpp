@@ -21,7 +21,7 @@ enum class nat_type : u8
 };
 
 #pragma pack(push, 1)
-
+// --------------------- network structs
 struct nat_request_t
 {
     u16 port;

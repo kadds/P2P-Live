@@ -26,6 +26,7 @@ class event_fd_handler_t : public event_handler_t
     void on_event(event_context_t &, event_type_t type) override
     {
         eventfd_t vl;
+        /// wake up epoll/select
         eventfd_read(fd, &vl);
     }
 
@@ -132,6 +133,7 @@ void event_loop_t::exit(int code)
 
 void event_loop_t::wake_up()
 {
+    /// no need for wake in current thread
     if (this == thread_in_loop)
         return;
     wake_up_event_handler->write();
@@ -155,6 +157,7 @@ execute_thread_dispatcher_t &event_loop_t::get_dispatcher() { return dispatcher;
 
 event_loop_t &event_context_t::select_loop()
 {
+    /// get minimum workload loop
     event_loop_t *min_load_loop;
     {
         std::shared_lock<std::shared_mutex> lock(loop_mutex);

@@ -52,7 +52,7 @@ timer_registered_t time_manager_t::insert(timer_t timer)
     }
     else
     {
-        timer.timepoint = (timer.timepoint + precision - 1) / precision * precision; // alignment
+        timer.timepoint = (timer.timepoint + precision - 1) / precision * precision; // alignment percistion
     }
 
     auto it = map.find(timer.timepoint);

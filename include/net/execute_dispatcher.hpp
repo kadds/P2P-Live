@@ -16,8 +16,11 @@ class execute_thread_dispatcher_t
     lock::spinlock_t cancel_lock;
 
   public:
+    /// 非线程安全，必须由evenet loop 调用，执行队列中的execute context
     void dispatch();
+    /// 线程安全函数。取消一个execute context
     void cancel(execute_context_t *econtext);
+    /// 线程安全函数。将一个execute context添加到队列中，并设置唤醒是执行的函数
     void add(execute_context_t *econtext, std::function<void()> func);
 };
 } // namespace net

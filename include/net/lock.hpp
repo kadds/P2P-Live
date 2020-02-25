@@ -20,6 +20,7 @@ class spinlock_t
         {
             while (flag)
             {
+                /// TODO: sleep cpu here
             }
             old = false;
         } while (!flag.compare_exchange_strong(old, true, std::memory_order_acquire));

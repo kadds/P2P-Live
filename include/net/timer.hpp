@@ -51,6 +51,7 @@ struct timer_registered_t
     microsecond_t timepoint;
 };
 
+/// timer is run in one thread, and is not thread-safety. don't add timer from other thread
 struct time_manager_t
 {
     microsecond_t precision;

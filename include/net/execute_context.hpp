@@ -33,6 +33,7 @@ class execute_context_t
     void start_with(std::function<void()> func);
     void run(std::function<void()> func);
 
+    /// wake up loop to execute coroutine
     void wake_up_thread();
 
     execute_context_t();

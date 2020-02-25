@@ -37,6 +37,8 @@ class client_t
     ~client_t();
     socket_t *get_socket() const { return socket; }
 
+    /// it just bind socket to a event, not really connect. set remote_address_bind_to_socket true can connect an
+    /// address
     void connect(event_context_t &context, socket_addr_t addr, bool remote_address_bind_to_socket = true);
 
     /// must call 'connect' befor call it.

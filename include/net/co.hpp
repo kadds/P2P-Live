@@ -35,16 +35,15 @@ template <typename T> class async_result_t
         : ok(false)
     {
     }
-
+    /// get inner data
     T operator()() { return u.impl_data; }
     bool is_finish() { return ok; };
 };
 
 class coroutine_t;
 
+/// the main coroutine
 thread_local inline coroutine_t *co_cur = nullptr;
-
-constexpr int stack_size = 1 << 16;
 
 ctx::fiber &&co_wrapper(ctx::fiber &&sink, coroutine_t *co);
 ctx::fiber &&co_reschedule_wrapper(ctx::fiber &&sink, coroutine_t *co, std::function<void()> func);
@@ -56,23 +55,24 @@ class coroutine_stop_exception
 class coroutine_t
 {
     ctx::fiber context;
+    /// entry function
     std::function<void()> func;
     /// previous coroutine
     /// make up a list chain
     coroutine_t *prev;
     friend ctx::fiber &&co_wrapper(ctx::fiber &&sink, coroutine_t *co);
     friend ctx::fiber &&co_reschedule_wrapper(ctx::fiber &&sink, coroutine_t *co, std::function<void()> func);
+
     execute_context_t *econtext;
     bool is_stop;
-    timer_registered_t reg_timer;
-
-  public:
+    /// don't create at stack
     coroutine_t(std::function<void()> f)
         : context(std::bind(co_wrapper, std::placeholders::_1, this))
         , func(f)
         , prev(nullptr)
         , is_stop(false){};
 
+  public:
     coroutine_t(const coroutine_t &) = delete;
     coroutine_t &operator=(const coroutine_t &) = delete;
 
@@ -146,7 +146,7 @@ class coroutine_t
             cur->context =
                 std::move(cur->context).resume_with(std::bind(co_reschedule_wrapper, std::placeholders::_1, cur, func));
             if (next->is_stop)
-                remove(next);
+                remove(next); // 延迟删除coroutine
             return;
         }
         else

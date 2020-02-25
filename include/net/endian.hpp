@@ -54,9 +54,11 @@ template <typename T> inline void cast(T &val)
     }
 }
 
+/// not need cast
 template <> inline void cast(i8 &val) {}
 template <> inline void cast(u8 &val) {}
 
+/// swap 0-7  8-15
 template <> inline void cast(u16 &val)
 {
     if constexpr (little_endian())
@@ -119,7 +121,9 @@ template <typename T> inline void cast_struct(T &val)
         cast_struct_impl<T, typename Typelist::Next>(((char *)&val) + sizeof(typename Typelist::Type));
     }
 }
-
+/// get struct from buffer
+///\param buffer the source data
+///\param val the target struct to save data after cast
 template <typename T> inline bool cast_to(socket_buffer_t &buffer, T &val)
 {
     auto ptr_from = buffer.get();
@@ -130,6 +134,10 @@ template <typename T> inline bool cast_to(socket_buffer_t &buffer, T &val)
     return true;
 }
 
+/// save struct to buffer
+///\param val the source struct
+///\param buffer the target buffer to save
+///\note the original struct is modified
 template <typename T> inline bool save_to(T &val, socket_buffer_t &buffer)
 {
     auto ptr = buffer.get();
@@ -140,6 +148,7 @@ template <typename T> inline bool save_to(T &val, socket_buffer_t &buffer)
     return true;
 }
 
+/// cast struct inplace, buffer and struct addresses must be the same
 template <typename T> inline bool cast_inplace(T &val, socket_buffer_t &buffer)
 {
     assert((byte *)&val == buffer.get());
