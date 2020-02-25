@@ -63,36 +63,101 @@ struct session_fragment_content
 
     std::vector<net::socket_buffer_t> vector;
 
-    void add_data() {}
+    void add_data(net::socket_buffer_t buffer, net::u64 fragment_id)
+    {
+        queue.emplace(vector.size());
+        map.emplace(fragment_id, vector.size());
+        vector.emplace_back(buffer);
 
-    void remove_data() {}
+        while (queue.size() > 50)
+        {
+            queue.pop();
+        }
+    }
+
+    std::optional<net::socket_buffer_t> get_data(net::u64 key)
+    {
+        auto idx = map.find(key);
+        if (idx != map.end())
+        {
+            return vector[idx->second];
+        }
+        return std::make_optional<net::socket_buffer_t>();
+    }
 };
 
 struct session_meta_content
 {
     std::unordered_map<net::u64, net::socket_buffer_t> raw_data;
     void add_data(net::socket_buffer_t buffer, net::u64 key) { raw_data[key] = buffer; }
+    std::optional<net::socket_buffer_t> get_data(net::u64 key)
+    {
+        auto idx = raw_data.find(key);
+        if (idx != raw_data.end())
+        {
+            return idx->second;
+        }
+        return std::make_optional<net::socket_buffer_t>();
+    }
 };
 
-std::unordered_map<net::u64, std::unique_ptr<session_fragment_content>> fragment_data;
-std::unordered_map<net::u64, std::unique_ptr<session_meta_content>> meta_data;
+struct channel_t
+{
+    std::unique_ptr<session_fragment_content> fragment;
+    std::unique_ptr<session_meta_content> meta;
+};
 
-void on_fragment_pull_request(net::p2p::peer_t &ps, net::p2p::peer_info_t *p, net::u64 fid) {}
+std::unordered_map<net::u64, std::unordered_map<int, channel_t>> globl_data;
 
-void on_meta_pull_request(net::p2p::peer_t &ps, net::p2p::peer_info_t *p, net::u64 key) {}
+/// BUG: add mutex here!!!
+void on_fragment_pull_request(net::p2p::peer_t &ps, net::p2p::peer_info_t *p, net::u64 fid, int channel)
+{
+    auto buf = globl_data[p->sid][channel].fragment->get_data(fid);
+    if (buf.has_value())
+    {
+        ps.send_meta_data_to_peer(p, fid, channel, buf.value());
+    }
+    else
+    {
+        LOG(INFO) << "request from " << p->remote_address.to_string() << "'s fragment " << fid << " channel " << channel
+                  << " is unknown.";
+    }
+}
 
-void on_fragment_recv(net::p2p::peer_t &ps, net::p2p::peer_info_t *p, net::socket_buffer_t buffer, net::u64 fid) {}
+void on_meta_pull_request(net::p2p::peer_t &ps, net::p2p::peer_info_t *p, net::u64 key, int channel)
+{
+    auto buf = globl_data[p->sid][channel].meta->get_data(key);
+    if (buf.has_value())
+    {
+        ps.send_meta_data_to_peer(p, key, channel, buf.value());
+    }
+    else
+    {
+        LOG(INFO) << "request from " << p->remote_address.to_string() << "'s meta info " << key << " channel "
+                  << channel << " is unknown.";
+    }
+}
 
-void on_meta_data_recv(net::p2p::peer_t &ps, net::p2p::peer_info_t *p, net::socket_buffer_t buffer, net::u64 key) {}
+void on_fragment_recv(net::p2p::peer_t &ps, net::p2p::peer_info_t *p, net::socket_buffer_t buffer, net::u64 fid,
+                      int channel)
+{
+    globl_data[p->sid][channel].fragment->add_data(buffer, fid);
+}
+
+void on_meta_data_recv(net::p2p::peer_t &ps, net::p2p::peer_info_t *p, net::socket_buffer_t buffer, net::u64 key,
+                       int channel)
+{
+    globl_data[p->sid][channel].meta->add_data(buffer, key);
+}
 
 int main(int argc, char **argv)
 {
     google::InitGoogleLogging(argv[0]);
     google::ParseCommandLineFlags(&argc, &argv, false);
-    google::SetLogDestination(google::GLOG_FATAL, "./edge-server.log");
-    google::SetLogDestination(google::GLOG_ERROR, "./edge-server.log");
-    google::SetLogDestination(google::GLOG_INFO, "./edge-server.log");
-    google::SetLogDestination(google::GLOG_WARNING, "./edge-server.log");
+    google::SetLogDestination(google::GLOG_FATAL, "./edge-server.fatal.log");
+    google::SetLogDestination(google::GLOG_ERROR, "./edge-server.error.log");
+    google::SetLogDestination(google::GLOG_INFO, "./edge-server.info.log");
+    google::SetLogDestination(google::GLOG_WARNING, "./edge-server.warning.log");
     google::SetStderrLogging(google::GLOG_INFO);
 
     atexit(atexit_func);

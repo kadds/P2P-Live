@@ -129,10 +129,10 @@ void atexit_func() { google::ShutdownGoogleLogging(); }
 void Log(char *argv[])
 {
     google::InitGoogleLogging(argv[0]);
-    google::SetLogDestination(google::GLOG_FATAL, "./source-client.log");
-    google::SetLogDestination(google::GLOG_ERROR, "./source-client.log");
-    google::SetLogDestination(google::GLOG_INFO, "./source-client.log");
-    google::SetLogDestination(google::GLOG_WARNING, "./source-client.log");
+    google::SetLogDestination(google::GLOG_FATAL, "./source-client.fatal.log");
+    google::SetLogDestination(google::GLOG_ERROR, "./source-client.error.log");
+    google::SetLogDestination(google::GLOG_INFO, "./source-client.info.log");
+    google::SetLogDestination(google::GLOG_WARNING, "./source-client.warning.log");
     google::SetStderrLogging(google::GLOG_INFO);
     atexit(atexit_func);
 }

@@ -43,10 +43,10 @@ int main(int argc, char **argv)
 {
     google::InitGoogleLogging(argv[0]);
     google::ParseCommandLineFlags(&argc, &argv, false);
-    google::SetLogDestination(google::GLOG_FATAL, "./tracker-server.log");
-    google::SetLogDestination(google::GLOG_ERROR, "./tracker-server.log");
-    google::SetLogDestination(google::GLOG_INFO, "./tracker-server.log");
-    google::SetLogDestination(google::GLOG_WARNING, "./tracker-server.log");
+    google::SetLogDestination(google::GLOG_FATAL, "./tracker-server.fatal.log");
+    google::SetLogDestination(google::GLOG_ERROR, "./tracker-server.error.log");
+    google::SetLogDestination(google::GLOG_INFO, "./tracker-server.info.log");
+    google::SetLogDestination(google::GLOG_WARNING, "./tracker-server.warning.log");
     google::SetStderrLogging(google::GLOG_INFO);
 
     atexit(atexit_func);

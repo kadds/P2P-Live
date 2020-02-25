@@ -180,11 +180,11 @@ struct peer_hash_t
 class peer_t
 {
   public:
-    using peer_data_recv_t = std::function<void(peer_t &, peer_info_t *, socket_buffer_t &, u64 id_key)>;
+    using peer_data_recv_t = std::function<void(peer_t &, peer_info_t *, socket_buffer_t, u64 id_key, int channel)>;
     using peer_disconnect_t = std::function<void(peer_t &, peer_info_t *)>;
     using peer_connect_ok_t = std::function<void(peer_t &, peer_info_t *)>;
 
-    using pull_request_t = std::function<void(peer_t &, peer_info_t *, u64 id_key)>;
+    using pull_request_t = std::function<void(peer_t &, peer_info_t *, u64 id_key, int channel)>;
 
   private:
     rudp_t udp;

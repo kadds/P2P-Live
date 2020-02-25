@@ -52,12 +52,12 @@ TEST(PeerTest, DataTransport)
     client.accept_channels({1});
 
     server
-        .on_meta_pull_request([&name, test_size_bytes](peer_t &server, peer_info_t *peer, u64 key) {
+        .on_meta_pull_request([&name, test_size_bytes](peer_t &server, peer_info_t *peer, u64 key, int channel) {
             socket_buffer_t buffer(name);
             buffer.expect().origin_length();
             server.send_meta_data_to_peer(peer, key, 1, std::move(buffer));
         })
-        .on_fragment_pull_request([](peer_t &server, peer_info_t *peer, fragment_id_t fid) {
+        .on_fragment_pull_request([](peer_t &server, peer_info_t *peer, fragment_id_t fid, int channel) {
             GTEST_ASSERT_GE(fid, 1);
             GTEST_ASSERT_LE(fid, 2);
             socket_buffer_t buffer(test_size_bytes);
@@ -69,15 +69,16 @@ TEST(PeerTest, DataTransport)
 
     int x = 0;
     client.on_peer_connect([](peer_t &client, peer_info_t *peer) { client.pull_meta_data(peer, 0, 1); })
-        .on_meta_data_recv([&ctx, &name](peer_t &client, peer_info_t *peer, socket_buffer_t &buffer, u64 key) {
-            GTEST_ASSERT_EQ(key, 0);
-            GTEST_ASSERT_EQ(buffer.get_length(), name.size());
-            std::string str = buffer.to_string();
-            GTEST_ASSERT_EQ(str, name);
-            client.pull_fragment_from_peer(peer, {1, 2}, 1, 0);
-        })
-        .on_fragment_recv([&ctx, &name, &x, test_size_bytes](peer_t &client, peer_info_t *peer, socket_buffer_t &buffer,
-                                                             fragment_id_t id) {
+        .on_meta_data_recv(
+            [&ctx, &name](peer_t &client, peer_info_t *peer, socket_buffer_t buffer, u64 key, int channel) {
+                GTEST_ASSERT_EQ(key, 0);
+                GTEST_ASSERT_EQ(buffer.get_length(), name.size());
+                std::string str = buffer.to_string();
+                GTEST_ASSERT_EQ(str, name);
+                client.pull_fragment_from_peer(peer, {1, 2}, 1, 0);
+            })
+        .on_fragment_recv([&ctx, &name, &x, test_size_bytes](peer_t &client, peer_info_t *peer, socket_buffer_t buffer,
+                                                             fragment_id_t id, int channel) {
             GTEST_ASSERT_EQ(buffer.get_length(), test_size_bytes);
             GTEST_ASSERT_EQ(buffer.get()[test_size_bytes - 1], id);
             x++;

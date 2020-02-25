@@ -218,7 +218,7 @@ void peer_t::main(rudp_connection_t conn)
             peer->last_ping = get_timestamp();
             peer_request_metainfo_t *request = (peer_request_metainfo_t *)data.get();
             if (meta_handler)
-                meta_handler(*this, peer, request->key);
+                meta_handler(*this, peer, request->key, conn.channel);
         }
         else if (type == peer_msg_type::meta_respond)
         {
@@ -228,7 +228,7 @@ void peer_t::main(rudp_connection_t conn)
             endian::cast_inplace(*respond, recv_buffer);
             recv_buffer.walk_step(sizeof(peer_meta_respond_t));
             if (meta_recv_handler)
-                meta_recv_handler(*this, peer, recv_buffer, respond->key);
+                meta_recv_handler(*this, peer, recv_buffer, respond->key, conn.channel);
         }
         else if (type == peer_msg_type::fragment_request)
         {
@@ -245,7 +245,7 @@ void peer_t::main(rudp_connection_t conn)
                     for (auto i = 0; i < request->count; i++)
                     {
                         endian::cast_inplace(request->ids[i], recv_buffer);
-                        fragment_handler(*this, peer, request->ids[i]);
+                        fragment_handler(*this, peer, request->ids[i], conn.channel);
                         recv_buffer.walk_step(sizeof(fragment_id_t));
                     }
             }
@@ -278,7 +278,8 @@ void peer_t::main(rudp_connection_t conn)
             {
                 chq.fragment_recv_buffer_cache.expect().origin_length();
                 if (fragment_recv_handler)
-                    fragment_recv_handler(*this, peer, chq.fragment_recv_buffer_cache, chq.fragment_recv_id);
+                    fragment_recv_handler(*this, peer, chq.fragment_recv_buffer_cache, chq.fragment_recv_id,
+                                          conn.channel);
                 chq.fragment_recv_buffer_cache = {};
             }
         }
@@ -305,7 +306,8 @@ void peer_t::main(rudp_connection_t conn)
             {
                 chq.fragment_recv_buffer_cache.expect().origin_length();
                 if (fragment_recv_handler)
-                    fragment_recv_handler(*this, peer, chq.fragment_recv_buffer_cache, chq.fragment_recv_id);
+                    fragment_recv_handler(*this, peer, chq.fragment_recv_buffer_cache, chq.fragment_recv_id,
+                                          conn.channel);
                 chq.fragment_recv_buffer_cache = {};
             }
         }
