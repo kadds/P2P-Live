@@ -1,5 +1,6 @@
 # A P2P-based online live broadcast system
-![GPL-3.0](https://img.shields.io/badge/License-GPL-green)  
+![GPL-3.0](https://img.shields.io/badge/License-GPL-green)
+![status](https://img.shields.io/badge/status-development-blue)  
 ![Build:master](https://github.com/kadds/P2P-Live/workflows/Build/badge.svg)
 ![Test:master](https://github.com/kadds/P2P-Live/workflows/Test/badge.svg)
 ![Lint:master](https://github.com/kadds/P2P-Live/workflows/Lint/badge.svg)
@@ -8,11 +9,13 @@
 * **client**             *src/client*  
     The peer to peer endpoint. Client can pull video-stream from peer to peer network with multi-channels.
 * **source-client**      *src/source-client*  
-    The live source client application. Based on QT5. Sending video-stream to server.
-* **server**             *src/server*  
-    The main functions of the server are [**UDP hole punching**](#UDP-hole-punching), instant messaging (IM), live streaming pull from the source client, room number allocation, peer to peer network control, etc.
+    The live source client application. Based on QT5&SDL2. Pushing video-stream to edge-server.
+* **edge-server**             *src/edge-server*  
+    The main functions of it are pull stream from the source client, dispatch live stream to peers, etc.
+* **tracker-server**         *src/tracker-server*  
+    The main functions of it are peer to peer network control, [**UDP hole punching**](#UDP-hole-punching), etc.
 * **libnet**             *lib/net*  
-    libnet is an **asynchronous** network library that uses **IO multiplexing** ( *select/epoll/IOCP* ) and no-blocked IO, while using [**coroutines**](#Coroutines) for each connection to improve IO response. Includes coroutines, [thread pool](#Thread-pool), timer, tcp/udp encapsulation, peer to peer network sending/receiving, tracker nodes exchange, reliable udp make by KCP, hole punching. etc...
+    libnet is an **asynchronous** network library that uses **IO multiplexing** ( *select/epoll* ) and no-blocked IO, while using [**coroutines**](#Coroutines) for each connection to improve IO response. Includes coroutines, [thread pool](#Thread-pool), timer, tcp/udp encapsulation, peer to peer network sending/receiving, tracker nodes exchange, reliable udp make by KCP, hole punching. etc...
 
 ## Building  
 Setting up a development environment with docker (optional):
@@ -86,7 +89,7 @@ Coroutine uses:
    Reliable UDP is built by KCP(ARQ) from UDP. A coroutine is built when tell RUDP to establish a new connection. each connection has a send/recv queue and does not block each other.  
 
 Coroutine dispatcher:
-Our scheduler has a dispatch queue and dispatches via FIFO. No need for cross-thread scheduling.
+The scheduler has a dispatch queue and dispatches via FIFO. No need for cross-thread scheduling.
 
 ### Thread pool
 TODO...
