@@ -108,12 +108,14 @@ uint8_t *video_buffer_test;
 
 // other
 SDL_mutex *play_mutex;
-
+SDL_mutex *stop_mutex;
+SDL_cond *stop_cond;
 PacketQueue *video_queue;
 PacketQueue *audio_queue;
 
 int quitFlag = 0;
 int stopFlag = 0;
+int startFlag = 0;
 int re = 0;
 int i = 0;
 int j = 0;
@@ -142,6 +144,7 @@ inline double r2d(AVRational r) { return r.num == 0 || r.den == 0 ? 0.0 : (doubl
 int audio_decode(void *)
 {
     ///-aaa
+
     int len = 0; //音频帧长度
     int data_size = 0;
 
@@ -149,13 +152,19 @@ int audio_decode(void *)
     ///-FILE *testfile = fopen("pcm.pcm", "wb");
     /// if (!testfile)
     ///    ErrorExit("file open fail");
+
+    while (startFlag == 0)
+        ; // start为1开始
     while (1)
     {
         if (quitFlag)
             break;
 
         while (stopFlag)
-            ;
+        {
+            SDL_LockMutex(stop_mutex);
+            SDL_CondWait(stop_cond, stop_mutex);
+        };
 
         if (packet_pop_queue(audio_queue, pPacket_Audio_play))
         {
@@ -200,7 +209,7 @@ int audio_decode(void *)
 //音频回调函数,播放音频用
 void audio_callback(void *udata, Uint8 *stream, int len)
 {
-    // std::cout << "audio_callback:" << pthread_self() << endl;
+    // std::cout << "audio_callback:" << pthread_self() << std::endl;
     SDL_memset(stream, 0, len);
 
     while (len > 0)
@@ -298,7 +307,7 @@ int sdl_init(int isVideo)
             if (SDL_OpenAudio(&sdl_audios, NULL) != 0)
                 ErrorExit("SDL_OpenAudio Fail");
 
-            SDL_PauseAudio(0);
+            // SDL_PauseAudio(0);//事件控制
             // audio buffer
             audio_buffer_size = av_samples_get_buffer_size(NULL, out_nb_channel_layout, nb_sample, audio_format, 1);
             audio_buffer = (uint8_t *)av_malloc(MAX_AUDIO_FRAME_SIZE * 3 / 2);
@@ -508,13 +517,19 @@ int stream_init(AVFormatContext *pFormatCtx)
 int demux_video(void *)
 {
     ///-ddd
+    while (startFlag == 0)
+        ; // start为1开始
+
     while (1)
     {
         if (quitFlag)
             break;
 
         while (stopFlag)
-            ;
+        {
+            SDL_LockMutex(stop_mutex);
+            SDL_CondWait(stop_cond, stop_mutex);
+        };
 
         if (video_queue->size >= MAX_VIDEO_QUEUE_SIZE)
         {
@@ -551,13 +566,19 @@ int demux(void *)
     //读包
     SDL_CreateThread(demux_video, "demux_video", pFormatCtx_Video);
 
+    while (startFlag == 0)
+        ; // start为1开始
+
     while (1)
     {
         if (quitFlag)
             break;
 
         while (stopFlag)
-            ;
+        {
+            SDL_LockMutex(stop_mutex);
+            SDL_CondWait(stop_cond, stop_mutex);
+        };
 
         if (audio_queue->size >= MAX_AUDIO_QUEUE_SIZE)
         {
@@ -578,9 +599,9 @@ int demux(void *)
     }
     return 0;
 }
-// planC
 
-int packet_push_queue(PacketQueue *queue, AVPacket *packet) //创建节点 放入queue
+//创建AVPacket节点 放入queue
+int packet_push_queue(PacketQueue *queue, AVPacket *packet)
 {
     /// ppp
     if (av_packet_make_refcounted(packet) < 0)
@@ -641,7 +662,7 @@ int packet_pop_queue(PacketQueue *queue, AVPacket *packet)
     return 0;
 }
 
-void sdl_play_video(uint8_t *YPlane, int Ylinesize, uint8_t *UPlane, int Ulinesize, uint8_t *VPlane, int Vlinesize)
+void sdl_display(uint8_t *YPlane, int Ylinesize, uint8_t *UPlane, int Ulinesize, uint8_t *VPlane, int Vlinesize)
 { ///- planar YUV 4:2:0, 12bpp, (1 Cr & Cb sample per 2x2 Y samples)
 
     re = SDL_UpdateYUVTexture(sdl_texture, NULL, YPlane, Ylinesize, UPlane, Ulinesize, VPlane, Vlinesize);
@@ -665,7 +686,6 @@ int encode_init()
     ///-eee
 
     //创建编码器
-
     pCodec_Video_out = avcodec_find_decoder(AV_CODEC_ID_H264);
     pCodec_Audio_out = avcodec_find_decoder(AV_CODEC_ID_AAC);
     if (!pCodec_Video_out || !pCodec_Audio_out)
@@ -734,13 +754,20 @@ int video_decode(void *)
 
     std::cout << "video_decode tid:";
     std::cout << pthread_self() << endl;
+    while (startFlag == 0)
+        ; // start为1开始
+
     while (1)
     {
         if (quitFlag)
             break;
 
         while (stopFlag)
-            ;
+        {
+            SDL_LockMutex(stop_mutex);
+            SDL_CondWait(stop_cond, stop_mutex);
+        };
+
         if (packet_pop_queue(video_queue, pPacket_Video_play))
         {
             std::cout << "video packet_pop_queue fail" << std::endl;
@@ -773,9 +800,9 @@ int video_decode(void *)
             //         pFrame_Video_out->data, pFrame_Video_out->linesize, 0, pCodecCtx_Video->height, //源数据
             //         pFrame_Video_YUV->data, pFrame_Video_YUV->linesize);
             cout << "play" << endl;*/
-            sdl_play_video(pFrame_Video_YUV->data[0], pFrame_Video_YUV->linesize[0], //
-                           pFrame_Video_YUV->data[1], pFrame_Video_YUV->linesize[1], //
-                           pFrame_Video_YUV->data[2], pFrame_Video_YUV->linesize[2]);
+            sdl_display(pFrame_Video_YUV->data[0], pFrame_Video_YUV->linesize[0], //
+                        pFrame_Video_YUV->data[1], pFrame_Video_YUV->linesize[1], //
+                        pFrame_Video_YUV->data[2], pFrame_Video_YUV->linesize[2]);
             /// encode
         }
 
@@ -841,7 +868,7 @@ void testmain()
 
     ///-pFormatCtx->flags |= AVFMT_FLAG_NONBLOCK;
 
-    /// SDL_PauseAudio(1);
+    SDL_PauseAudio(1);
     SDL_Event event;
     while (1)
     {
@@ -852,7 +879,25 @@ void testmain()
                 quitFlag = 1;
                 // SDL_CloseAudio();
                 // destroy();
+                startFlag = 0;
                 exit(0);
+                break;
+            case SDL_KEYDOWN:
+                //键盘空格开始
+                if (event.key.keysym.sym == SDLK_SPACE)
+                {
+                    SDL_PauseAudio(0);
+                    startFlag = 1;
+                    stopFlag = 0;
+                    SDL_CondSignal(stop_cond);
+                }
+                // pause暂停键
+                else if (event.key.keysym.sym == SDLK_PAUSE)
+                {
+                    startFlag = 0;
+                    stopFlag = 1;
+                    SDL_PauseAudio(1);
+                }
                 break;
             default:
                 // cout << "其他事件" << endl;
@@ -864,7 +909,7 @@ void testmain()
 int main(int argc, char *argv[])
 {
     Log(argv);
-    // test(argc, argv);
+    // test(argc, argv);//进入mainwindow进行文件测试
     init_peer(1, net::socket_addr_t("127.0.0.1", 2769), net::make_timespan(2));
 
     testmain();
