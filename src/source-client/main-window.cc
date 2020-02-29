@@ -1,5 +1,23 @@
 #include "main-window.hpp"
 #include "ui_main-window.h"
+
+MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent)
+    , ui(new Ui::MainWindow)
+{
+
+    // cout<<"~"<<endl;
+    // ui->setupUi(this);
+    // this->setWindowTitle("P2P Live");
+    // SDL_CreateThread(&sdl_event,"123",NULL);
+
+    // show_dshow_device();
+    // demux("./test2.mp4", "outvideo.yuv", "outaudio.pcm");
+    // SDL();
+    // RGBToYUV(320,568);
+    // std::cout << "程序正常运行" << std::endl;
+}
+
 /*用于测试打开一个文件*/ /*
  #define BPP 12
 
@@ -24,22 +42,6 @@
  SDL_Texture *texture = NULL;
  SDL_Rect myrect;
 
- MainWindow::MainWindow(QWidget *parent)
-     : QMainWindow(parent)
-     , ui(new Ui::MainWindow)
- {
-
-     // cout<<"~"<<endl;
-     // ui->setupUi(this);
-     // this->setWindowTitle("P2P Live");
-     // SDL_CreateThread(&sdl_event,"123",NULL);
-
-     // show_dshow_device();
-     demux("./test2.mp4", "outvideo.yuv", "outaudio.pcm");
-     // SDL();
-     // RGBToYUV(320,568);
-     std::cout << "程序正常运行" << std::endl;
- }
 
  void MainWindow::show_dshow_device()
  {
@@ -430,5 +432,5 @@
      cout << " Error: " << errorStr << endl;
      exit(-1);
  }
- MainWindow::~MainWindow() { delete ui; }
  */
+MainWindow::~MainWindow() { delete ui; }

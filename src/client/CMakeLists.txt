@@ -18,5 +18,5 @@ add_executable(client ${DIR_SRCS} ${WINDOW_UI})
 target_include_directories(client PUBLIC ${QT_INCLUDES} )
 target_include_directories(client PUBLIC ${FFMPEG_INCLUDE_DIR})
 
-target_link_libraries(client PUBLIC ${FFMPEG_LIBRARY} Qt5::Widgets Qt5::Core Qt5::Gui glog net glog gflags Threads::Threads)
+target_link_libraries(client PUBLIC ${FFMPEG_LIBRARY} Qt5::Widgets Qt5::Core Qt5::Gui glog net glog gflags Threads::Threads SDL2)
 

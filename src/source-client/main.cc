@@ -841,12 +841,12 @@ int ErrorExit(int errorNum, std::string errorStr)
 }
 int test(int argc, char *argv[])
 { // std::cout  << fps << std::endl << r2d(pCodecCtx_Video->framerate);
-    // cout << video_format << endl;
+  // cout << video_format << endl;
 
-    QApplication app(argc, argv);
-    MainWindow mainWindow;
-    mainWindow.show();
-    return app.exec();
+    // QApplication app(argc, argv);
+    // MainWindow mainWindow;
+    // mainWindow.show();
+    // return app.exec();
 }
 void testmain()
 {

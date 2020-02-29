@@ -15,7 +15,7 @@
 * **tracker-server**         *src/tracker-server*  
     The main functions of it are peer to peer network control, [**UDP hole punching**](#UDP-hole-punching), etc.
 * **libnet**             *lib/net*  
-    libnet is an **asynchronous** network library that uses **IO multiplexing** ( *select/epoll* ) and no-blocked IO, while using [**coroutines**](#Coroutines) for each connection to improve IO response. Includes coroutines, [thread pool](#Thread-pool), timer, tcp/udp encapsulation, peer to peer network sending/receiving, tracker nodes exchange, reliable udp make by KCP, hole punching. etc...
+    libnet is a network library that uses **IO multiplexing** ( *select/epoll* ) and no-blocked IO, while using [**coroutines**](#Coroutines) for each connection to improve IO response. Includes coroutines, [thread pool](#Thread-pool), timer, tcp/udp encapsulation, peer to peer network sending/receiving, tracker nodes exchanging, reliable udp make by KCP, hole punching. etc...
 
 ## Building  
 Setting up a development environment with docker (optional):
