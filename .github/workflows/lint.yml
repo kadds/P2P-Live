@@ -14,6 +14,6 @@ jobs:
       - uses: DoozyX/clang-format-lint-action@v0.5
         with:
           source: './'
-          exclude: './build,third'
+          exclude: './build,./include/net/third,./lib/net/third,./.github,./doc'
           extensions: 'hpp,cc,h,c,cpp'
           clangFormatVersion: 9

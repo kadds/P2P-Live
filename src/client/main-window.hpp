@@ -5,7 +5,9 @@
 #include <QOpenGLWidget>
 #include <QThread>
 #include <thread>
-
+extern "C" {
+#include <libavformat/avformat.h>
+}
 namespace Ui
 {
 class MainWindow;
@@ -17,12 +19,18 @@ class MainWindow : public QMainWindow
   public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
-    void device_main();
+    void video_main();
+    void audio_main();
+    void get_device();
 
   private:
     Ui::MainWindow *ui;
-    std::thread thread;
+    std::thread video_thread, audio_thread;
     int target_width;
     int target_height;
     bool run;
+    AVFormatContext *video_format_ctx, *audio_format_ctx;
+    int videoindex;
+    int audioindex;
+    AVCodecContext *video_codec, *audio_codec;
 };

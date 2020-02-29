@@ -15,56 +15,8 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
-void MainWindow::device_main()
+void MainWindow::video_main()
 {
-    av_register_all();
-    avdevice_register_all();
-    AVFormatContext *format_ctx = avformat_alloc_context();
-    // AVInputFormat *ifmt = av_find_input_format("vfwcap");
-    // AVInputFormat *ifmt = av_find_input_format("dshow");
-    // avformat_open_input(&format_ctx,"video=Integrated Camera",ifmt,NULL) ;
-
-    // avformat_open_input(&format_ctx, 0, ifmt, NULL);
-
-    AVInputFormat *ifmt = av_find_input_format("video4linux2");
-    if (avformat_open_input(&format_ctx, "/dev/video0", ifmt, NULL) != 0)
-    {
-        LOG(FATAL) << "couldn't open input stream.\n";
-        exit(-1);
-    }
-
-    // input video initialize
-    if (avformat_find_stream_info(format_ctx, NULL) < 0)
-    {
-        LOG(FATAL) << "Couldn't find video stream information.\n";
-        exit(-1);
-    }
-
-    int videoindex = -1;
-    int audioindex = -1;
-    for (int i = 0; i < format_ctx->nb_streams; i++)
-    {
-        if (format_ctx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO && videoindex == -1)
-        {
-            videoindex = i;
-        }
-        else if (format_ctx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO && audioindex == -1)
-        {
-            audioindex = i;
-        }
-    }
-
-    if (videoindex == -1)
-    {
-        LOG(FATAL) << "couldn't find video stream.\n";
-        exit(-1);
-    }
-
-    if (audioindex == -1)
-    {
-        LOG(ERROR) << "couldn't find audio stream.\n";
-    }
-    auto &video_codec = format_ctx->streams[videoindex]->codec;
 
     if (avcodec_open2(video_codec, avcodec_find_decoder(video_codec->codec_id), NULL) < 0)
     {
@@ -73,7 +25,7 @@ void MainWindow::device_main()
     }
 
     LOG(INFO) << "width: " << video_codec->width << ",height: " << video_codec->height
-              << ",format: " << video_codec->pix_fmt;
+              << ",format: " << video_codec->pix_fmt << ",desc: " << video_codec->codec_descriptor->long_name;
     AVPacket *packet;
     AVFrame *frame, *frameYUV;
     if (target_width == 0)
@@ -99,7 +51,7 @@ void MainWindow::device_main()
     auto size_byte = video_codec->width * video_codec->height;
     while (run)
     {
-        if (av_read_frame(format_ctx, packet) < 0)
+        if (av_read_frame(video_format_ctx, packet) < 0)
         {
             LOG(INFO) << "read from stream failed";
             continue;
@@ -134,8 +86,88 @@ void MainWindow::device_main()
     delete[] out_buffer;
 
     avcodec_close(video_codec);
-    avformat_close_input(&format_ctx);
-    avformat_free_context(format_ctx);
+}
+
+void MainWindow::audio_main()
+{
+
+    if (avcodec_open2(audio_codec, avcodec_find_decoder(audio_codec->codec_id), NULL) < 0)
+    {
+        LOG(FATAL) << "Could not open audio codec.\n";
+        exit(-1);
+    }
+    LOG(INFO) << "width: " << audio_codec->width << ",height: " << audio_codec->height
+              << ",format: " << audio_codec->pix_fmt << ",desc: " << audio_codec->codec_descriptor->long_name;
+}
+
+void MainWindow::get_device()
+{
+    avdevice_register_all();
+    avcodec_register_all();
+    av_register_all();
+    AVFormatContext *format_ctx = nullptr;
+
+    std::unordered_map<std::string, std::vector<std::string>> devs = {
+        {"video4linux2", {"/dev/video0", "/dev/video1"}},
+        {"alsa", {"/dev/audio0", "/dev/audio1", "hw:0", "hw:1", "hw2"}},
+        {"dshow", {"video=Integrated Camera"}}};
+
+    for (auto &it : devs)
+    {
+        auto [name, dev_name] = it;
+        AVInputFormat *ifmt = av_find_input_format(name.c_str());
+        if (!ifmt)
+            continue;
+        for (auto dev : dev_name)
+        {
+            if (!format_ctx)
+                format_ctx = avformat_alloc_context();
+            if (avformat_open_input(&format_ctx, dev.c_str(), ifmt, NULL) != 0)
+            {
+                LOG(INFO) << "Couldn't open input stream. " << name << ":" << dev;
+                continue;
+            }
+
+            if (avformat_find_stream_info(format_ctx, NULL) < 0)
+            {
+                LOG(INFO) << "Couldn't find stream information.\n";
+            }
+            bool used = false;
+            for (int i = 0; i < format_ctx->nb_streams; i++)
+            {
+                if (format_ctx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO && videoindex == -1)
+                {
+                    videoindex = i;
+                    video_codec = format_ctx->streams[i]->codec;
+                    video_format_ctx = format_ctx;
+                    format_ctx = nullptr;
+                    used = true;
+                    break;
+                }
+                else if (format_ctx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO && audioindex == -1)
+                {
+                    audioindex = i;
+                    audio_codec = format_ctx->streams[i]->codec;
+                    audio_format_ctx = format_ctx;
+                    format_ctx = nullptr;
+                    used = true;
+                    break;
+                }
+            }
+            if (videoindex >= 0 && audioindex >= 0)
+                break;
+        }
+    }
+
+    if (videoindex == -1)
+    {
+        LOG(FATAL) << "Couldn't find video stream.\n";
+    }
+
+    if (audioindex == -1)
+    {
+        LOG(ERROR) << "Couldn't find audio stream.\n";
+    }
 }
 
 MainWindow::MainWindow(QWidget *parent)
@@ -144,16 +176,25 @@ MainWindow::MainWindow(QWidget *parent)
     , target_width(0)
     , target_height(0)
     , run(true)
+    , videoindex(-1)
+    , audioindex(-1)
 {
     qRegisterMetaType<std::shared_ptr<char[]>>("std::shared_ptr<char[]>");
 
     ui->setupUi(this);
-    thread = std::thread(std::bind(&MainWindow::device_main, this));
+    get_device();
+    video_thread = std::thread(std::bind(&MainWindow::video_main, this));
+    audio_thread = std::thread(std::bind(&MainWindow::audio_main, this));
 }
 
 MainWindow::~MainWindow()
 {
     run = false;
-    thread.join();
+    video_thread.join();
+    audio_thread.join();
+    avformat_close_input(&video_format_ctx);
+    avformat_free_context(video_format_ctx);
+    avformat_close_input(&audio_format_ctx);
+    avformat_free_context(audio_format_ctx);
     delete ui;
 }
