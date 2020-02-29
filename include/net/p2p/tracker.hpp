@@ -338,7 +338,7 @@ class tracker_node_client_t
     using nodes_connect_handler_t = std::function<void(tracker_node_client_t &, peer_node_t)>;
     using error_handler_t = std::function<void(tracker_node_client_t &, socket_addr_t addr, connection_state)>;
     using disconnect_handler_t = std::function<void(tracker_node_client_t &)>;
-    using tracker_connect_handler_t = std::function<void(tracker_node_client_t &, socket_addr_t )>;
+    using tracker_connect_handler_t = std::function<void(tracker_node_client_t &, socket_addr_t)>;
 
   private:
     tcp::client_t client;
