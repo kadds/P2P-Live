@@ -29,8 +29,12 @@ class execute_context_t
     event_loop_t *get_loop() const { return loop; }
     void set_loop(event_loop_t *loop) { this->loop = loop; }
 
+    // rerun coroutine, push it to dispatcher queue
     void start();
     void start_with(std::function<void()> func);
+
+    /// start coroutine and set function
+    /// push it to dispatcher queue
     void run(std::function<void()> func);
 
     /// wake up loop to execute coroutine

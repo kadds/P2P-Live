@@ -51,7 +51,7 @@ struct timer_registered_t
     microsecond_t timepoint;
 };
 
-/// timer is run in one thread, and is not thread-safety. don't add timer from other thread
+/// there is not thread-safety. Don't add timer from other thread
 struct time_manager_t
 {
     microsecond_t precision;
@@ -63,12 +63,16 @@ struct time_manager_t
     void tick();
     timer_registered_t insert(timer_t timer);
     void cancel(timer_registered_t reg);
+
+    /// get the time should be called at next tick 'timepoint'
     microsecond_t next_tick_timepoint();
 };
 
 std::unique_ptr<time_manager_t> create_time_manager(microsecond_t precision = timer_min_precision);
 
 microsecond_t get_current_time();
+
+/// Inner use
 microsecond_t get_timestamp();
 
 constexpr microsecond_t make_timespan(int second, int ms = 0, int us = 0)

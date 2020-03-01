@@ -19,6 +19,7 @@ struct except_buffer_helper_t
     socket_buffer_t &operator()() const { return *buf; }
 };
 
+/// a control block used by socket buffer
 struct socket_buffer_header_t
 {
     std::atomic_int ref_count;
@@ -36,9 +37,14 @@ class socket_buffer_t
 
   public:
     socket_buffer_t(std::string str);
+    /// init buffer with nothing, the pointer will not be initialized.
     socket_buffer_t();
     socket_buffer_t(u64 len);
+    /// init buffer with pointer
     socket_buffer_t(byte *buffer_ptr, u64 buffer_length);
+
+    /// copy
+    /// add ref
     socket_buffer_t(const socket_buffer_t &);
     socket_buffer_t &operator=(const socket_buffer_t &);
 

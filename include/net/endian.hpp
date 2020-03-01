@@ -30,6 +30,8 @@ template <typename Head, typename... Args> struct typelist_t<Head, Args...>
 namespace net::endian
 {
 
+///\note GNU extension
+///\note using c++20 std::endian
 constexpr inline bool little_endian() { return __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__; }
 
 template <typename T> void cast_struct(T &val);
@@ -149,6 +151,8 @@ template <typename T> inline bool save_to(T &val, socket_buffer_t &buffer)
 }
 
 /// cast struct inplace, buffer and struct addresses must be the same
+///\param val the struct to cast
+///\param buffer the origin buffer which sames as struct 'val'
 template <typename T> inline bool cast_inplace(T &val, socket_buffer_t &buffer)
 {
     assert((byte *)&val == buffer.get());

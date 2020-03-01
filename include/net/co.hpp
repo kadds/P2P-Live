@@ -35,7 +35,8 @@ template <typename T> class async_result_t
         : ok(false)
     {
     }
-    /// get inner data
+    /// 获取结果
+    ///\note 任务未完成时结果未定义
     T operator()() { return u.impl_data; }
     bool is_finish() { return ok; };
 };
@@ -43,15 +44,17 @@ template <typename T> class async_result_t
 class coroutine_t;
 
 /// the main coroutine
+/// 主线程的coroutine，保存线程默认栈信息
 thread_local inline coroutine_t *co_cur = nullptr;
 
 ctx::fiber &&co_wrapper(ctx::fiber &&sink, coroutine_t *co);
 ctx::fiber &&co_reschedule_wrapper(ctx::fiber &&sink, coroutine_t *co, std::function<void()> func);
 
+/// throw it when wants to stop coroutine
 class coroutine_stop_exception
 {
 };
-/// coroutine
+
 class coroutine_t
 {
     ctx::fiber context;
@@ -65,7 +68,7 @@ class coroutine_t
 
     execute_context_t *econtext;
     bool is_stop;
-    /// don't create at stack
+    /// don't create at stack as private member
     coroutine_t(std::function<void()> f)
         : context(std::bind(co_wrapper, std::placeholders::_1, this))
         , func(f)
