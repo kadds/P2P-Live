@@ -120,6 +120,8 @@ int re = 0;
 int i = 0;
 int j = 0;
 
+std::atomic_bool sever_is_connect = false;
+
 ////函数
 int ErrorExit(int errorNum);
 int ErrorExit(std::string errorStr);
@@ -547,6 +549,10 @@ int demux_video(void *)
         }
         else
         {
+            if (sever_is_connect)
+            {
+                send_data((void *)pPacket_Video->data[0], pPacket_Video->size, 0, pPacket_Video->stream_index);
+            }
             packet_push_queue(video_queue, pPacket_Video);
         }
     }
@@ -910,6 +916,12 @@ int main(int argc, char *argv[])
 {
     Log(argv);
     // test(argc, argv);//进入mainwindow进行文件测试
+
+    on_connection_error([](net::connection_state state) {
+        LOG(INFO) << "reconnecting...";
+        return true;
+    });
+    on_edge_server_prepared([]() { sever_is_connect = true; });
     init_peer(1, net::socket_addr_t("127.0.0.1", 2769), net::make_timespan(2));
 
     testmain();

@@ -39,6 +39,13 @@ void on_shared_peer_error(net::p2p::tracker_server_t &server, net::socket_addr_t
               << " reason: " << net::connection_state_strings[(int)state];
 }
 
+void on_peer_hole_connect(net::p2p::tracker_server_t &server, net::p2p::peer_node_t node)
+{
+    net::socket_addr_t addr(node.ip, node.port);
+
+    LOG(INFO) << "peer ->" << addr.to_string();
+}
+
 int main(int argc, char **argv)
 {
     google::InitGoogleLogging(argv[0]);
@@ -79,6 +86,7 @@ int main(int argc, char **argv)
     tracker_server->on_shared_peer_add_connection(on_shared_peer_add);
     tracker_server->on_shared_peer_remove_connection(on_shared_peer_remove);
     tracker_server->on_shared_peer_error(on_shared_peer_error);
+    tracker_server->on_normal_peer_connect(on_peer_hole_connect);
 
     LOG(INFO) << "run event loop";
     auto ret = app_context->run();

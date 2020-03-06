@@ -10,5 +10,6 @@ void send_meta_info(void *buffer, int size, int channel, int key);
 
 // return true for reconnect
 void on_connection_error(std::function<bool(net::connection_state)>);
+void on_edge_server_prepared(std::function<void()>);
 
 void close_peer();

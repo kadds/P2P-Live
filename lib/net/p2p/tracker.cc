@@ -118,19 +118,24 @@ void tracker_server_t::server_main(tcp::connection_t conn)
             // skip head
             send_buffer.walk_step(sizeof(get_nodes_respond_t));
             int i = 0;
+            auto cur_time = get_current_time();
             if (request.strategy == request_strategy::random)
             {
                 if (node_infos.size() > 0)
                 {
                     int start = rand() % node_infos.size();
-                    for (int j = start + 1; i < request.max_count; j++)
+                    bool over = false;
+                    for (int j = start; i < request.max_count; j++)
                     {
                         if (j >= node_infos.size())
+                        {
+                            over = true;
                             j = 0;
-                        if (j == start)
+                        }
+                        if (j == start && over)
                             break;
                         if ((node_infos[j].sid == 0 || request.sid == node_infos[j].sid) &&
-                            get_current_time() - node_infos[j].last_ping <= node_tick_times * node_tick_timespan)
+                            cur_time - node_infos[j].last_ping <= node_tick_times * node_tick_timespan)
                         {
                             // add
                             respond->peers[i].ip = node_infos[j].node.ip;
@@ -149,6 +154,32 @@ void tracker_server_t::server_main(tcp::connection_t conn)
             }
             else if (request.strategy == request_strategy::edge_node)
             {
+                if (node_infos.size() > 0)
+                {
+                    int start = rand() % node_infos.size();
+                    bool over = false;
+                    for (int j = start; i < request.max_count; j++)
+                    {
+                        if (j >= node_infos.size())
+                        {
+                            over = true;
+                            j = 0;
+                        }
+                        if (j == start && over)
+                            break;
+                        if (node_infos[j].sid == 0 &&
+                            cur_time - node_infos[j].last_ping <= node_tick_times * node_tick_timespan)
+                        {
+                            // add
+                            respond->peers[i].ip = node_infos[j].node.ip;
+                            respond->peers[i].port = node_infos[j].node.port;
+                            respond->peers[i].udp_port = node_infos[j].node.udp_port;
+
+                            endian::cast_inplace(respond->peers[i++], send_buffer);
+                            send_buffer.walk_step(sizeof(tracker_peer_node_t));
+                        }
+                    }
+                }
             }
             else
             {
@@ -384,7 +415,15 @@ void tracker_server_t::udp_main(rudp_connection_t conn)
     /// NOTE: this port may be a NAT port
     request.from_udp_port = conn.address.get_port();
 
-    node_info.conn.get_socket()->start_with([tcpconn, request]() {
+    node_info.conn.get_socket()->start_with([tcpconn, request, this]() {
+        if (normal_peer_connect_handler)
+        {
+            peer_node_t node;
+            node.ip = request.from_ip;
+            node.port = request.from_port;
+            node.udp_port = request.from_udp_port;
+            normal_peer_connect_handler(*this, node);
+        }
         tcp::package_head_t head;
         head.version = 4;
         head.v4.msg_type = tracker_packet::peer_request;
@@ -529,6 +568,12 @@ tracker_server_t &tracker_server_t::on_shared_peer_error(peer_error_handler_t ha
     return *this;
 }
 
+tracker_server_t &tracker_server_t::on_normal_peer_connect(peer_connect_handler_t handler)
+{
+    normal_peer_connect_handler = handler;
+    return *this;
+}
+
 std::vector<tracker_node_t> tracker_server_t::get_trackers() const
 {
     std::vector<tracker_node_t> vec;
@@ -643,18 +688,25 @@ void tracker_node_client_t::main(tcp::connection_t conn)
             if (respond.return_count > 1000)
                 return;
             /// get rest node
-            std::unique_ptr<char[]> data = std::make_unique<char[]>(respond.return_count * sizeof(tracker_peer_node_t));
-            socket_buffer_t recv_data_buffer((byte *)data.get(), respond.return_count * sizeof(tracker_peer_node_t));
-            recv_data_buffer.expect().origin_length();
-            co::await(tcp::conn_aread_packet_content, conn, recv_data_buffer);
-            tracker_peer_node_t *node = (tracker_peer_node_t *)data.get();
-            for (auto i = 0; i < respond.return_count; i++)
+            if (respond.return_count > 0)
             {
-                endian::cast_inplace(node[i], recv_data_buffer);
-                recv_data_buffer.walk_step(sizeof(tracker_peer_node_t));
+                std::unique_ptr<char[]> data =
+                    std::make_unique<char[]>(respond.return_count * sizeof(tracker_peer_node_t));
+                socket_buffer_t recv_data_buffer((byte *)data.get(),
+                                                 respond.return_count * sizeof(tracker_peer_node_t));
+                recv_data_buffer.expect().origin_length();
+                co::await(tcp::conn_aread_packet_content, conn, recv_data_buffer);
+                tracker_peer_node_t *node = (tracker_peer_node_t *)data.get();
+                for (auto i = 0; i < respond.return_count; i++)
+                {
+                    endian::cast_inplace(node[i], recv_data_buffer);
+                    recv_data_buffer.walk_step(sizeof(tracker_peer_node_t));
+                }
+                if (node_update_handler)
+                    node_update_handler(*this, (peer_node_t *)node, (u64)respond.return_count);
             }
-            if (node_update_handler)
-                node_update_handler(*this, (peer_node_t *)node, (u64)respond.return_count);
+            else if (node_update_handler)
+                node_update_handler(*this, (peer_node_t *)nullptr, 0);
         }
         else if (head.v4.msg_type == tracker_packet::get_trackers_respond)
         {

@@ -10,6 +10,7 @@ using namespace net::p2p;
 using namespace net;
 event_context_t *app_context;
 std::function<bool(net::connection_state)> error_handler;
+std::function<void()> edge_server_prepared_handler;
 
 peer_t *glob_peer;
 peer_info_t *edge_peer_target = nullptr;
@@ -56,6 +57,7 @@ void thread_main(u64 sid, socket_addr_t ts_server_addr, microsecond_t timeout)
                 }
                 else
                 {
+                    LOG(INFO) << "exit all context";
                     app_context->exit_all(-1);
                 }
             }
@@ -72,6 +74,8 @@ void thread_main(u64 sid, socket_addr_t ts_server_addr, microsecond_t timeout)
             LOG(ERROR) << "invalid state, new target " << info->remote_address.to_string();
         }
         edge_peer_target = info;
+        if (edge_server_prepared_handler)
+            edge_server_prepared_handler();
     });
 
     peer->on_peer_disconnect([](peer_t &, peer_info_t *info) {
@@ -79,7 +83,14 @@ void thread_main(u64 sid, socket_addr_t ts_server_addr, microsecond_t timeout)
         {
             LOG(ERROR) << "invalid state, new target " << info->remote_address.to_string();
         }
-        edge_peer_target = nullptr;
+        if (error_handler && error_handler(connection_state::close_by_peer))
+        {
+            glob_peer->connect_to_peer(info, edge_peer_target->remote_address);
+        }
+        else
+        {
+            edge_peer_target = nullptr;
+        }
     });
 
     context.run();
@@ -117,5 +128,7 @@ void send_meta_info(void *buffer_ptr, int size, int channel, int key)
 }
 
 void on_connection_error(std::function<bool(net::connection_state)> func) { error_handler = func; }
+
+void on_edge_server_prepared(std::function<void()> func) { edge_server_prepared_handler = func; }
 
 void close_peer() { app_context->exit_all(0); }
