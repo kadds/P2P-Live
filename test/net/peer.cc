@@ -53,7 +53,7 @@ TEST(PeerTest, DataTransport)
 
     server
         .on_meta_pull_request([&name, test_size_bytes](peer_t &server, peer_info_t *peer, u64 key, int channel) {
-            socket_buffer_t buffer(name);
+            socket_buffer_t buffer = socket_buffer_t::from_string(name);
             buffer.expect().origin_length();
             server.send_meta_data_to_peer(peer, key, 1, std::move(buffer));
         })

@@ -45,6 +45,8 @@ thread_pool_t::~thread_pool_t()
 
 void thread_pool_t::commit(std::function<void()> task)
 {
+    if (exit) // don't push task
+        return;
     {
         std::unique_lock<std::mutex> lock(mutex);
         tasks.emplace(task);

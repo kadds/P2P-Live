@@ -25,6 +25,7 @@ struct socket_buffer_header_t
     std::atomic_int ref_count;
 };
 
+/// socket buffer includes shared counter, move operator
 class socket_buffer_t
 {
     byte *ptr;
@@ -35,8 +36,10 @@ class socket_buffer_t
 
     friend struct except_buffer_helper_t;
 
+  private:
+    static socket_buffer_t from_struct_inner(byte *buffer_ptr, u64 buffer_length);
+
   public:
-    socket_buffer_t(std::string str);
     /// init buffer with nothing, the pointer will not be initialized.
     socket_buffer_t();
     socket_buffer_t(u64 len);
@@ -53,6 +56,14 @@ class socket_buffer_t
     socket_buffer_t &operator()(socket_buffer_t &&buf);
 
     ~socket_buffer_t();
+
+    template <typename T> static socket_buffer_t from_struct(T &buf)
+    {
+        static_assert(std::is_pod_v<T>);
+        return from_struct_inner((byte *)&buf, sizeof(T));
+    }
+
+    static socket_buffer_t from_string(std::string str);
 
     byte *get_base_ptr() const { return ptr; }
     /// get pointer current offset

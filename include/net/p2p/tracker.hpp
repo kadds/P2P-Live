@@ -9,62 +9,6 @@
 namespace net::p2p
 {
 
-/**
- * tracker server
- * 1. bind tcp server. link trackers and get request from peer nodes
- * 2. bind rudp server to detect NAT.
- *
- * peer A startup
- * if A as a peer server.
- *      A connect to tracker server. keep long tcp connection.
- *          A->server
- *          tracker_heartbeat_t
- *
- *
- * A get peer nodes
- * 1. A request peer nodes from tracker server.
- *      A->server
- *      get_nodes_request_t
- * 2. tracker server send peer nodes to A.
- *      server->A
- *      get_nodes_respond_t
- *
- * A get trackers
- * 1. A request trackers from tracker server.
- *      A->server
- *      get_trackers_request_t
- * 2. tracker server send data to A
- *      server->A
- *      get_trackers_respond_t
- *
- * When A need connect to a peer server B. (A | NAT, B | NAT)
- * 1. A bind an rudp port.
- * 2. send detect package to tracker server from rudp port. request nodes connection to tracker server to tracker
- * server.
- *      A->server
- *      connection_request_t
- * 3. tracker server send A connection info (A's rudp ip, port) to B.
- *      server->B (long connection) forward
- *      connection_request_t
- *
- * 4. B bind port, send detect package to tracker server.
- *      B->server
- *      connection_request_t
- * 5. B try send udp to A rudp address
- *      B->A
- *      connection_request_t
- *
- * 6. tracker server forward B package to A
- *      server->A
- *      connection_request_t
- *
- * 7. A connect B
- *      A->B
- *      connection_request_t
- *
- *
- */
-
 enum class request_strategy : u8
 {
     random,
@@ -265,7 +209,7 @@ struct addr_hash_func
 constexpr static inline u64 node_tick_timespan = 30000000;
 constexpr static inline u64 node_tick_times = 2;
 
-/// TODO: 解决线程安全问题
+/// BUG: there is not thread-safety, try fix it.
 class tracker_server_t
 {
   private:

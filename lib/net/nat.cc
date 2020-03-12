@@ -16,7 +16,7 @@ void nat_server_t::client_main(tcp::connection_t conn)
     nat_request_t request;
     if (head.v3.size != sizeof(request))
         return;
-    socket_buffer_t buffer((byte *)&request, sizeof(request));
+    socket_buffer_t buffer = socket_buffer_t::from_struct(request);
     buffer.expect().origin_length();
     if (co::await(tcp::conn_aread_packet_content, conn, buffer) != io_result::ok)
         return;
@@ -54,7 +54,7 @@ void net_detector_t::get_nat_type(event_context_t &ctx, socket_addr_t server, ha
             {
                 nat_udp_request_t request;
                 request.key = key;
-                socket_buffer_t buffer((byte *)&request, sizeof(request));
+                socket_buffer_t buffer = socket_buffer_t::from_struct(request);
                 buffer.expect().origin_length();
                 endian::cast_inplace(request, buffer);
                 co::await(rudp_awrite, &rudp, conn, buffer);
@@ -91,7 +91,7 @@ void net_detector_t::get_nat_type(event_context_t &ctx, socket_addr_t server, ha
         request.ip = c.get_socket()->local_addr().v4_addr();
         request.udp_port = udp_port;
         request.key = key;
-        socket_buffer_t buffer((byte *)&request, sizeof(request));
+        socket_buffer_t buffer = socket_buffer_t::from_struct(request);
         buffer.expect().origin_length();
         endian::cast_inplace(request, buffer);
         co::await(tcp::conn_awrite_packet, conn, head, buffer);

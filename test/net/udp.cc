@@ -31,7 +31,7 @@ TEST(UPDTest, UPDPackageTest)
     client.connect(ctx, test_addr, false);
     client.run([&client, &test_addr, &ctx]() {
         auto socket = client.get_socket();
-        socket_buffer_t buffer(test_data);
+        socket_buffer_t buffer = socket_buffer_t::from_string(test_data);
         buffer.expect().origin_length();
         socket_addr_t addr = test_addr;
         GTEST_ASSERT_EQ(co::await(socket_awrite_to, socket, buffer, addr), io_result::ok);

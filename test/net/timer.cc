@@ -23,7 +23,6 @@ TEST(TimerTest, TimerShortTick)
     }));
     ctx.run();
     GTEST_ASSERT_GE(point2 - point, span);
-    GTEST_ASSERT_LT(point2 - point, span + timer_min_precision * 2);
 }
 
 TEST(TimerTest, TimerLongTick)
@@ -41,7 +40,6 @@ TEST(TimerTest, TimerLongTick)
     }));
     ctx.run();
     GTEST_ASSERT_GE(point2 - point, span);
-    GTEST_ASSERT_LT(point2 - point, span + 500000 * 2);
 }
 
 void work()
@@ -101,7 +99,7 @@ TEST(TimerTest, SocketTimer)
     server.on_client_join([span, &point](tcp::server_t &s, tcp::connection_t conn) {
         point = get_current_time();
         conn.get_socket()->sleep(span);
-        socket_buffer_t buffer("hi");
+        socket_buffer_t buffer = socket_buffer_t::from_string("hi");
         buffer.expect().origin_length();
         GTEST_ASSERT_EQ(co::await(tcp::conn_awrite, conn, buffer), io_result::ok);
     });

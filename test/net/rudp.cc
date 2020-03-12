@@ -22,7 +22,7 @@ TEST(RUDPTest, Interface)
     int count_flag = 0;
 
     rudp1.on_new_connection([&rudp1, &ctx, &count_flag](rudp_connection_t conn) {
-        socket_buffer_t buffer(test_data);
+        socket_buffer_t buffer = socket_buffer_t::from_string(test_data);
         buffer.expect().origin_length();
         GTEST_ASSERT_EQ(co::await(rudp_awrite, &rudp1, conn, buffer), io_result::ok);
         buffer.expect().origin_length();
@@ -36,7 +36,8 @@ TEST(RUDPTest, Interface)
     });
 
     rudp2.on_new_connection([&rudp2, &ctx, &count_flag](rudp_connection_t conn) {
-        socket_buffer_t buffer(test_data);
+        socket_buffer_t buffer = socket_buffer_t::from_string(test_data);
+
         buffer.expect().origin_length();
         GTEST_ASSERT_EQ(co::await(rudp_awrite, &rudp2, conn, buffer), io_result::ok);
         buffer.expect().origin_length();

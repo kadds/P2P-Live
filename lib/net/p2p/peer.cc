@@ -18,7 +18,7 @@ void peer_t::bind_udp()
 {
     udp.on_new_connection(std::bind(&peer_t::main, this, std::placeholders::_1));
     udp.on_unknown_packet([this](socket_addr_t addr) {
-        if (peers.find(addr) != peers.end())
+        if (peers.find(addr) != peers.end()) // if peer is registed. add udp connection
         {
             udp.add_connection(addr, 0, make_timespan(disconnect_tick));
             for (auto c : channels)
@@ -62,14 +62,15 @@ void peer_t::send_fragments(fragment_id_t fid, socket_buffer_t buffer, rudp_conn
     respond->type = peer_msg_type::fragment_respond;
     respond->fid = fid;
     respond->frame_size = buffer.get_length();
+    /// send first fragment
     int len = std::min(buffer.get_length(), udp.get_mtu() - sizeof(peer_fragment_respond_t));
-
     send_buffer.expect().length(sizeof(peer_fragment_respond_t) + len);
     endian::cast_inplace(*respond, send_buffer);
     memcpy(send_buffer.get() + sizeof(peer_fragment_respond_t), buffer.get(), len);
     co::await(rudp_awrite, &udp, conn, send_buffer);
     buffer.walk_step(len);
     send_buffer.expect().origin_length();
+    /// send rest fragments
     peer_fragment_rest_respond_t *rsp = (peer_fragment_rest_respond_t *)send_buffer.get();
     rsp->type = peer_msg_type::fragment_respond_rest;
 
@@ -88,7 +89,7 @@ void peer_t::send_init(rudp_connection_t conn)
     peer_init_request_t req;
     req.type = peer_msg_type::init_request;
     req.sid = sid;
-    socket_buffer_t buffer((byte *)&req, sizeof(req));
+    socket_buffer_t buffer = socket_buffer_t::from_struct(req);
     buffer.expect().origin_length();
     endian::cast_inplace(req, buffer);
     co::await(rudp_awrite, &udp, conn, buffer);
@@ -152,6 +153,7 @@ peer_info_t *peer_t::find_peer(socket_addr_t addr)
 
 void peer_t::main(rudp_connection_t conn)
 {
+    /// 1472 is udp MSS
     std::unique_ptr<char[]> data = std::make_unique<char[]>(1472);
     socket_buffer_t recv_buffer((byte *)data.get(), 1472);
     int channel = conn.channel;
@@ -423,7 +425,7 @@ void peer_t::update_metainfo(u64 key, rudp_connection_t conn)
 {
     peer_request_metainfo_t request;
 
-    socket_buffer_t send_buffer((byte *)&request, sizeof(request));
+    socket_buffer_t send_buffer = socket_buffer_t::from_struct(request);
 
     request.key = key;
     request.type = peer_msg_type::get_meta;

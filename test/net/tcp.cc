@@ -29,7 +29,7 @@ TEST(TCPTest, StreamConnection)
     tcp::client_t client;
     client
         .on_server_connect([](tcp::client_t &c, tcp::connection_t conn) {
-            socket_buffer_t buffer(test_data);
+            socket_buffer_t buffer = socket_buffer_t::from_string(test_data);
             buffer.expect().origin_length();
             GTEST_ASSERT_EQ(co::await(tcp::conn_awrite, conn, buffer), io_result::ok);
             buffer.expect().origin_length();
@@ -153,7 +153,7 @@ static void client_main(tcp::client_t &client, event_context_t *context, net::so
 {
     client
         .on_server_connect([](tcp::client_t &c, tcp::connection_t conn) {
-            socket_buffer_t buffer(test_data);
+            socket_buffer_t buffer = socket_buffer_t::from_string(test_data);
             buffer.expect().origin_length();
             GTEST_ASSERT_EQ(co::await(tcp::conn_awrite, conn, buffer), io_result::ok);
             buffer.expect().origin_length();

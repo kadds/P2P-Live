@@ -21,7 +21,8 @@ co::async_result_t<io_result> connection_t::aread_packet_head(co::paramter_t &pa
 {
     if (param.get_user_ptr() == 0) /// version none, first read
     {
-        socket_buffer_t buffer((byte *)&head, sizeof(package_head_t));
+        socket_buffer_t buffer = socket_buffer_t::from_struct(head);
+        /// first read version bytes
         buffer.expect().length(sizeof(head.version));
 
         auto res = socket_aread(param, socket, buffer);
@@ -37,9 +38,9 @@ co::async_result_t<io_result> connection_t::aread_packet_head(co::paramter_t &pa
         /// save state, and we don't execute this branch any more.
         param.set_user_ptr((void *)1);
     }
-    // read head
+    // read rest head
 
-    socket_buffer_t buffer((byte *)&head, sizeof(package_head_t));
+    socket_buffer_t buffer = socket_buffer_t::from_struct(head);
     int length;
     assert(head.version <= 4 && head.version >= 1);
     switch (head.version)
@@ -127,7 +128,6 @@ send_head:
         switch (head.version)
         {
             case 1: {
-
                 auto ret = set_head_and_send(param, head.v1, buffer.get_length(), socket);
                 if (ret.is_finish())
                 {

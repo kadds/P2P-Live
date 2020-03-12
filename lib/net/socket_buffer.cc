@@ -26,17 +26,6 @@ socket_buffer_t::socket_buffer_t()
 {
 }
 
-socket_buffer_t::socket_buffer_t(std::string str)
-    : ptr(new byte[str.size()])
-    , header(new socket_buffer_header_t())
-    , buffer_size(str.size())
-    , valid_data_length(0)
-    , walk_offset(0)
-{
-    memcpy(ptr, str.c_str(), str.size());
-    header->ref_count = 1;
-}
-
 socket_buffer_t::socket_buffer_t(u64 len)
     : ptr(new byte[len])
     , header(new socket_buffer_header_t())
@@ -45,6 +34,19 @@ socket_buffer_t::socket_buffer_t(u64 len)
     , walk_offset(0)
 {
     header->ref_count = 1;
+}
+
+socket_buffer_t socket_buffer_t::from_struct_inner(byte *buffer_ptr, u64 buffer_length)
+{
+    socket_buffer_t buffer(buffer_ptr, buffer_length);
+    return std::move(buffer);
+}
+
+socket_buffer_t socket_buffer_t::from_string(std::string str)
+{
+    socket_buffer_t buffer(str.size());
+    memcpy(buffer.ptr, str.c_str(), str.size());
+    return std::move(buffer);
 }
 
 socket_buffer_t::socket_buffer_t(byte *buffer_ptr, u64 buffer_length)

@@ -1,13 +1,12 @@
 #pragma once
-#include "co.hpp"
+#include <atomic>
 #include <condition_variable>
 #include <functional>
-#include <future>
+#include <queue>
+#include <thread>
+
 namespace net
 {
-struct task_content_t
-{
-};
 
 class thread_pool_t
 {
@@ -16,6 +15,7 @@ class thread_pool_t
     mutable std::mutex mutex;
     std::condition_variable cond;
     std::queue<std::function<void()>> tasks;
+    // exit flag
     bool exit;
     std::atomic_int counter;
     void wrapper();
@@ -27,6 +27,7 @@ class thread_pool_t
     thread_pool_t(const thread_pool_t &) = delete;
     thread_pool_t &operator=(const thread_pool_t &) = delete;
 
+    ///\note we wait all threads to exit at here
     ~thread_pool_t();
 
     /// commit a task to thread pool

@@ -172,6 +172,7 @@ struct peer_info_t
     bool operator!=(const peer_info_t &rt) const { return !operator==(rt); }
 };
 
+/// hash function
 struct peer_hash_t
 {
     u64 operator()(const socket_addr_t &p) const { return p.hash(); }

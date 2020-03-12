@@ -79,7 +79,7 @@ But When NATA or NATB is Symmetric NAT?
 If NTAA and NATB both symmetric NAT, We don't process it and just connect to edge server to get data.
 
 ### Coroutines
-It is a stackful coroutine switch by Boost.Context.
+It is a stackfull coroutine switch by Boost.Context.
 Coroutine uses:
 1. TCP
     When TCP acceptor accepts a new TCP client, a coroutine is built to process it. Coroutines are randomly assigned to the event loop for load balancing.
@@ -92,7 +92,7 @@ Coroutine dispatcher:
 The scheduler has a dispatch queue and dispatches via FIFO. No need for cross-thread scheduling.
 
 ### Thread pool
-TODO...
+Put task to queue. Pop it up to run.
 
 ## Third-party
 Ensure that the following packages are installed:  
