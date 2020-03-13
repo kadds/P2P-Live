@@ -12,7 +12,7 @@ void front_server_t::bind_inner(event_context_t &context, socket_addr_t addr, bo
         if (server_handler)
             server_handler(*this, conn);
     });
-    inner_server.listen(context, addr, 100000, reuse_addr);
+    inner_server.listen(context, addr, 10, reuse_addr);
 }
 
 void front_server_t::bind(event_context_t &context, socket_addr_t addr, bool reuse_addr)
@@ -35,7 +35,7 @@ void front_server_t::bind(event_context_t &context, socket_addr_t addr, bool reu
             }
         }
     });
-    server.listen(context, addr, 100000, reuse_addr);
+    server.listen(context, addr, 10, reuse_addr);
 }
 
 front_server_t &front_server_t::on_client_request(front_handler_t handler)

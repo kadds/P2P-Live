@@ -15,10 +15,10 @@
 * **tracker-server**         *src/tracker-server*  
     The main functions of it are peer to peer network control, [**UDP hole punching**](#UDP-hole-punching), etc.
 * **libnet**             *lib/net*  
-    libnet is a network library that uses **IO multiplexing** ( *select/epoll* ) and no-blocked IO, while using [**coroutines**](#Coroutines) for each connection to improve IO response. Includes coroutines, [thread pool](#Thread-pool), timer, tcp/udp encapsulation, peer to peer network sending/receiving, tracker nodes exchanging, reliable udp make by KCP, hole punching. etc...
+    libnet is a network library that uses **IO multiplexing** ( *select/epoll* ) and no-blocked IO, while using [**coroutines**](#Coroutines) for each connection to improve IO response. Including coroutines, [thread pool](#Thread-pool), timer, tcp/udp encapsulation, peer to peer network sending/receiving, tracker nodes exchanging, reliable udp make by KCP, hole punching. etc...
 
 ## Building  
-Setting up a development environment with docker (optional):
+Setting up development environment with docker (optional):
 ```Bash
 # build image
 docker build -t p2p-live .
@@ -86,7 +86,7 @@ Coroutine uses:
 2. UDP
    Not supports multi-coroutines, only one coroutine is used for sending and writing.
 3. RUDP
-   Reliable UDP is built by KCP(ARQ) from UDP. A coroutine is built when tell RUDP to establish a new connection. each connection has a send/recv queue and does not block each other.  
+   Reliable UDP is built by KCP(ARQ) from UDP. A coroutine is built when tell RUDP to establish a new connection. Each connection has a send/recv queue and does not block each other.  
 
 Coroutine dispatcher:
 The scheduler has a dispatch queue and dispatches via FIFO. No need for cross-thread scheduling.

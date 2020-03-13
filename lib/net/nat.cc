@@ -28,7 +28,7 @@ void nat_server_t::other_server_main(tcp::connection_t conn) {}
 void nat_server_t::bind(event_context_t &ctx, socket_addr_t server_addr, bool reuse_addr)
 {
     server.on_client_join(std::bind(&nat_server_t::client_main, this, std::placeholders::_2));
-    this->server.listen(ctx, server_addr, 100000, reuse_addr);
+    this->server.listen(ctx, server_addr, 10, reuse_addr);
     rudp.bind(ctx);
     rudp.on_new_connection([this](rudp_connection_t conn) {
         socket_buffer_t buffer(rudp.get_mtu());

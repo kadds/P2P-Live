@@ -115,7 +115,7 @@ TEST(PeerTest, TrackerPingPong)
     {
         addrs[i] = socket_addr_t("127.0.0.1", 2500 + i);
         servers[i].config("");
-        servers[i].bind(ctx, addrs[i], true);
+        servers[i].bind(ctx, addrs[i], test_count, true);
     }
 
     for (auto i = 0; i < test_count; i++)
@@ -149,10 +149,10 @@ TEST(PeerTest, TrackerNode)
 
     tracker_server_t tserver1;
     socket_addr_t taddrs1("127.0.0.1", 2555);
-    tserver1.bind(ctx, taddrs1, true);
+    tserver1.bind(ctx, taddrs1, test_count + 2, true);
     tracker_server_t tserver2;
     socket_addr_t taddrs2("127.0.0.1", 2556);
-    tserver2.bind(ctx, taddrs2, true);
+    tserver2.bind(ctx, taddrs2, test_count + 2, true);
 
     // link tserver1 and tserver2
     tserver1.link_other_tracker_server(ctx, taddrs2, make_timespan(1));

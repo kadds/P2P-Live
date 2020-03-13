@@ -80,7 +80,7 @@ int main(int argc, char **argv)
     LOG(INFO) << "start tracker server at " << FLAGS_ip << ":" << FLAGS_port;
 
     std::unique_ptr<net::p2p::tracker_server_t> tracker_server = std::make_unique<net::p2p::tracker_server_t>();
-    tracker_server->bind(context, net::socket_addr_t(FLAGS_ip, FLAGS_port), FLAGS_reuse);
+    tracker_server->bind(context, net::socket_addr_t(FLAGS_ip, FLAGS_port), 50, FLAGS_reuse);
     /// configurate edge server key
     tracker_server->config("edge server key");
     tracker_server->on_shared_peer_add_connection(on_shared_peer_add);

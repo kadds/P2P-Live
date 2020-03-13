@@ -167,10 +167,6 @@ void peer_t::main(rudp_connection_t conn)
     {
         recv_buffer.expect().origin_length();
         auto ret = co::await(rudp_aread, &udp, conn, recv_buffer);
-        if (ret == io_result::timeout)
-        {
-            continue;
-        }
 
         u8 type = recv_buffer.get()[0];
         if (type == peer_msg_type::init_request)

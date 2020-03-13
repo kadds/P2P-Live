@@ -453,7 +453,7 @@ void tracker_server_t::close()
 
 void tracker_server_t::config(std::string edge_key) { this->edge_key = edge_key; }
 
-void tracker_server_t::bind(event_context_t &context, socket_addr_t addr, bool reuse_addr)
+void tracker_server_t::bind(event_context_t &context, socket_addr_t addr, int max_client_count, bool reuse_addr)
 {
     server.on_client_join(std::bind(&tracker_server_t::server_main, this, std::placeholders::_2));
     server
@@ -499,7 +499,7 @@ void tracker_server_t::bind(event_context_t &context, socket_addr_t addr, bool r
             }
         });
 
-    server.listen(context, addr, 10000000, reuse_addr);
+    server.listen(context, addr, max_client_count, reuse_addr);
 
     udp.on_unknown_packet([this](socket_addr_t addr) {
         udp.add_connection(addr, 0, make_timespan(10));

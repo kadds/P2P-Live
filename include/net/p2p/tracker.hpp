@@ -278,7 +278,7 @@ class tracker_server_t
 
     void config(std::string edge_key);
 
-    void bind(event_context_t &context, socket_addr_t addr, bool reuse_addr = false);
+    void bind(event_context_t &context, socket_addr_t addr, int max_client_count, bool reuse_addr = false);
     void link_other_tracker_server(event_context_t &context, socket_addr_t addr, microsecond_t timeout);
     tracker_server_t &on_link_error(link_error_handler_t handler);
     tracker_server_t &on_link_server(link_handler_t handler);

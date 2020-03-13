@@ -38,8 +38,6 @@ class socket_t : public execute_context_t, event_handler_t
     socket_addr_t remote;
     bool is_connection_closed;
 
-    event_type_t current_event;
-
     friend co::async_result_t<io_result> connect_to(co::paramter_t &, socket_t *, socket_addr_t);
     friend co::async_result_t<socket_t *> accept_from(co::paramter_t &, socket_t *in);
     friend class event_loop_t;
@@ -72,8 +70,6 @@ class socket_t : public execute_context_t, event_handler_t
     void remove_event(event_type_t type);
 
     int get_raw_handle() const { return fd; }
-
-    event_type_t get_current_event() const { return current_event; }
 
     bool is_connection_alive() const { return !is_connection_closed; }
 
@@ -109,6 +105,8 @@ socket_t *set_socket_send_buffer_size(socket_t *socket, int size);
 socket_t *set_socket_recv_buffer_size(socket_t *socket, int size);
 int get_socket_send_buffer_size(socket_t *socket);
 int get_socket_recv_buffer_size(socket_t *socket);
+
+/// get local ip address
 socket_addr_t get_ip(socket_t *socket);
 
 } // namespace net

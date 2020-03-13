@@ -9,7 +9,6 @@ namespace net
 {
 socket_t::socket_t(int fd)
     : fd(fd)
-    , current_event(0)
     , is_connection_closed(true)
 {
 }
@@ -199,11 +198,7 @@ io_result socket_t::read_pack(socket_buffer_t &buffer, socket_addr_t &target)
     auto addr = target.get_raw_addr();
     socklen_t slen = sizeof(addr);
     auto len = recvfrom(fd, buffer.get(), buffer.get_length(), MSG_DONTWAIT, (sockaddr *)&addr, &slen);
-    if (len == 0)
-    {
-        return io_result::closed;
-    }
-    else if (len < 0)
+    if (len < 0)
     {
         if (errno == EINTR)
         {
@@ -290,8 +285,6 @@ socket_addr_t socket_t::remote_addr()
 
 void socket_t::on_event(event_context_t &context, event_type_t type)
 {
-    current_event = type;
-
     if (type & event_type::readable || type & event_type::writable || type & event_type::error)
     {
         start();
