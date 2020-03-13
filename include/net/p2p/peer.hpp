@@ -1,3 +1,23 @@
+/**
+* \file peer.hpp
+* \author kadds (itmyxyf@gmail.com)
+* \brief peer server/client
+* \version 0.1
+* \date 2020-03-13
+*
+* @copyright Copyright (c) 2020.
+This file is part of P2P-Live.
+
+P2P-Live is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+P2P-Live is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
+*
+*/
 #pragma once
 #include "../endian.hpp"
 #include "../net.hpp"
@@ -39,7 +59,7 @@
  *      X
  *
  */
-/// forward
+
 namespace net
 {
 class socket_t;
@@ -70,7 +90,7 @@ enum : u8
     heart = 0xFF,
 };
 }
-
+// ---------------- request/respond begin ----------------
 #pragma pack(push, 1)
 
 struct peer_init_request_t
@@ -137,8 +157,7 @@ struct peer_meta_respond_t
 };
 
 #pragma pack(pop)
-
-/// peer tp peer
+// ----------------------- request/respond end ---------------------
 
 struct channel_info_t
 {
@@ -156,7 +175,7 @@ struct channel_info_t
 
 struct peer_info_t
 {
-    std::unordered_map<channel_t, channel_info_t> channel;
+    std::unordered_map<channel_t, channel_info_t> channel; // map channel -> channel info
 
     socket_addr_t remote_address;
     u64 sid;
@@ -188,10 +207,14 @@ class peer_t
     using pull_request_t = std::function<void(peer_t &, peer_info_t *, u64 id_key, int channel)>;
 
   private:
+    /// Data socket to transfer data
     rudp_t udp;
+    /// session id request/provide
     session_id_t sid;
+    /// peer map
     std::unordered_map<socket_addr_t, std::unique_ptr<peer_info_t>, peer_hash_t> peers;
     std::vector<std::unique_ptr<peer_info_t>> noconnect_peers;
+
     peer_data_recv_t meta_recv_handler;
     peer_data_recv_t fragment_recv_handler;
 
@@ -199,12 +222,14 @@ class peer_t
     peer_connect_ok_t connect_handler;
     pull_request_t fragment_handler;
     pull_request_t meta_handler;
-    void main(rudp_connection_t conn);
-    void heartbeat(rudp_connection_t conn);
 
     u64 heartbeat_tick = 30000000;
     u64 disconnect_tick = 120000000;
     std::vector<channel_t> channels;
+
+  private:
+    void main(rudp_connection_t conn);
+    void heartbeat(rudp_connection_t conn);
 
     void update_fragments(std::vector<fragment_id_t> ids, u8 priority, rudp_connection_t conn);
     void update_metainfo(u64 key, rudp_connection_t conn);

@@ -1,3 +1,23 @@
+/**
+* \file endian.hpp
+* \author kadds (itmyxyf@gmail.com)
+* \brief automatic end-to-end conversion on struct。
+* \version 0.1
+* \date 2020-03-13
+*
+* @copyright Copyright (c) 2020.
+This file is part of P2P-Live.
+
+P2P-Live is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+P2P-Live is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
+*
+*/
 #pragma once
 #include "net.hpp"
 #include "socket_buffer.hpp"
@@ -10,6 +30,7 @@ namespace net::serialization
 {
 template <typename... Args> struct typelist_t;
 
+/// the type list save members in struct.
 template <typename Head> struct typelist_t<Head>
 {
     constexpr static bool has_next = false;
@@ -31,7 +52,7 @@ namespace net::endian
 {
 
 ///\note GNU extension
-///\note using c++20 std::endian
+///\note using c++20 std::endian when enable c++20
 constexpr inline bool little_endian() { return __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__; }
 
 template <typename T> void cast_struct(T &val);
@@ -40,7 +61,6 @@ template <typename T, size_t N> void cast_array(T (&val)[N]);
 
 /// cast struct to network endian (big endian).
 /// do nothing at big endian architecture.
-/// unsupport union.
 template <typename T> inline void cast(T &val)
 {
     if constexpr (little_endian())
@@ -56,11 +76,11 @@ template <typename T> inline void cast(T &val)
     }
 }
 
-/// not need cast
+/// not cast needed
 template <> inline void cast(i8 &val) {}
 template <> inline void cast(u8 &val) {}
 
-/// swap 0-7  8-15
+/// swap bit 0-7 and 8-15
 template <> inline void cast(u16 &val)
 {
     if constexpr (little_endian())
@@ -95,6 +115,7 @@ template <> inline void cast(u64 &val)
 
 template <> inline void cast(i64 &val) { cast(*(i64 *)&val); }
 
+/// specialization of arrays
 template <typename T, size_t N> inline void cast_array(T (&val)[N])
 {
     for (size_t i = 0; i < N; i++)
@@ -114,7 +135,7 @@ template <typename T, typename Typelist> inline void cast_struct_impl(void *val)
 
 template <typename T> inline void cast_struct(T &val)
 {
-    static_assert(std::is_pod_v<T>, "struct should be a POD type. BUG show.");
+    static_assert(std::is_pod_v<T>, "struct should be a POD type.");
     using Typelist = typename T::member_list_t;
     cast<typename Typelist::Type>(*(typename Typelist::Type *)&val);
 
@@ -123,6 +144,7 @@ template <typename T> inline void cast_struct(T &val)
         cast_struct_impl<T, typename Typelist::Next>(((char *)&val) + sizeof(typename Typelist::Type));
     }
 }
+
 /// get struct from buffer
 ///\param buffer the source data
 ///\param val the target struct to save data after cast

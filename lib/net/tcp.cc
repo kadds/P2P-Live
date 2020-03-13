@@ -245,9 +245,6 @@ void server_t::listen(event_context_t &context, socket_addr_t address, int max_c
     listen_from(bind_at(server_socket, address), max_client);
 
     server_socket->bind_context(context);
-
-    server_socket->add_event(event_type::readable);
-
     server_socket->run(std::bind(&server_t::wait_client, this));
 }
 

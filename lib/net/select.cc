@@ -11,6 +11,7 @@ event_select_demultiplexer::event_select_demultiplexer()
 
 event_select_demultiplexer::~event_select_demultiplexer() {}
 
+/// XXX: the event will be available when call next 'select'. it must be in this thread, so the problem will not occur
 void event_select_demultiplexer::add(handle_t handle, event_type_t type)
 {
     if (type & event_type::readable)
@@ -40,7 +41,7 @@ handle_t event_select_demultiplexer::select(event_type_t *type, microsecond_t *t
         *timeout = 0;
         return 0;
     }
-
+    /// 0 1 2 is STDIN STDOUT STDERR
     for (int i = 3; i < FD_SETSIZE; i++)
     {
         if (FD_ISSET(i, &rs))

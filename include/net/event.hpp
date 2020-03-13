@@ -1,3 +1,24 @@
+/**
+* \file event.hpp
+* \author kadds (itmyxyf@gmail.com)
+* \brief Includes event demultiplexer interface, event handler interface, event loop and event context.
+* \version 0.1
+* \date 2020-03-13
+*
+* @copyright Copyright (c) 2020.
+This file is part of P2P-Live.
+
+P2P-Live is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+P2P-Live is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
+*
+*/
+
 #pragma once
 #include "execute_dispatcher.hpp"
 #include "lock.hpp"
@@ -13,6 +34,8 @@ namespace net
 {
 
 using event_type_t = unsigned long;
+
+/// different handle types on different platforms
 using handle_t = int;
 
 namespace event_type
@@ -24,7 +47,7 @@ enum : event_type_t
     error = 4,
 };
 };
-
+/// forward declaration
 class socket_t;
 class event_context_t;
 class event_loop_t;
@@ -35,13 +58,14 @@ enum event_strategy
 {
     select,
     epoll,
-    /// TODO: 封装IOCP的实现
+    /// TODO: Encapsulation of IOCP
     IOCP,
 };
 
-/// 多路解复用器
-/// 等待并选择一个可用的事件，同时指定等待超时
-/// 对不同的平台不同的实现可能有不同的线程安全性，请不要总是认为它是线程安全的
+/// Demultiplexer
+/// Wait and select an available event, while specifying the wait timeout
+///\note Different implementations may have different thread safety for different platforms, please do not always
+/// consider it to be thread safe.
 class event_demultiplexer
 {
   public:
@@ -116,16 +140,17 @@ class event_loop_t
 
     event_demultiplexer *get_demuxer() const { return demuxer; }
 
+  private:
+    /// run loop util call exit
+    int run();
+
   public:
     event_loop_t(microsecond_t precision);
-    event_loop_t(std::unique_ptr<time_manager_t> time_manager);
     ~event_loop_t();
 
     event_loop_t(const event_loop_t &) = delete;
     event_loop_t &operator=(const event_loop_t &) = delete;
 
-    /// run loop util call exit
-    int run();
     /// exit event loop with code.
     void exit(int code);
     /// get workload
@@ -158,7 +183,7 @@ class event_loop_t
 /// unique global context in an application
 class event_context_t
 {
-    /// 多路解复用策略
+    /// demultiplexing strategy
     event_strategy strategy;
 
     std::shared_mutex loop_mutex;

@@ -1,3 +1,23 @@
+/**
+* \file tracker.hpp
+* \author kadds (itmyxyf@gmail.com)
+* \brief tracker server and tracker node client
+* \version 0.1
+* \date 2020-03-13
+*
+* @copyright Copyright (c) 2020.
+This file is part of P2P-Live.
+
+P2P-Live is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+P2P-Live is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
+*
+*/
 #pragma once
 #include "../endian.hpp"
 #include "../net.hpp"
@@ -15,7 +35,7 @@ enum class request_strategy : u8
     min_workload,
     edge_node,
 };
-
+/// tracker packet type
 namespace tracker_packet
 {
 enum
@@ -79,7 +99,7 @@ struct get_tracker_info_respond_t
 
 struct init_connection_t
 {
-    u64 register_sid;
+    u64 register_sid; /// key must be set when sid is 0 (present edge server)
     u8 key[512];
     using member_list_t = serialization::typelist_t<u64, u8[512]>;
 };
@@ -123,7 +143,7 @@ struct tracker_heartbeat_t
 constexpr u64 conn_request_magic = 0xC0FF8888;
 struct udp_connection_request_t
 {
-    u32 magic;
+    u32 magic; // conn_request_magic
     u16 target_port;
     u32 target_ip;
     u16 from_port;
@@ -232,10 +252,6 @@ class tracker_server_t
     u16 udp_port;
     std::string edge_key;
 
-    void server_main(tcp::connection_t conn);
-    void client_main(tcp::connection_t conn);
-    void udp_main(rudp_connection_t conn);
-
     /// save index of tracker_infos
     std::unordered_map<socket_addr_t, std::unique_ptr<tracker_info_t>, addr_hash_func> trackers;
     std::unordered_map<socket_addr_t, size_t, addr_hash_func> nodes;
@@ -247,6 +263,10 @@ class tracker_server_t
     peer_error_handler_t peer_error_handler;
     peer_connect_handler_t normal_peer_connect_handler;
 
+  private:
+    void server_main(tcp::connection_t conn);
+    void client_main(tcp::connection_t conn);
+    void udp_main(rudp_connection_t conn);
     void update_tracker(socket_addr_t addr, tcp::connection_t conn, tracker_ping_pong_t &res);
 
   public:
@@ -276,7 +296,6 @@ class tracker_server_t
 };
 
 /// client under NAT or not
-/// sid == 0 is edge server
 class tracker_node_client_t
 {
   private:
@@ -308,16 +327,14 @@ class tracker_node_client_t
     bool wait_next_package;
 
     std::queue<std::tuple<int, request_strategy>> node_queue;
+    socket_addr_t remote_server_address;
+    event_context_t *context;
+    std::string key;
 
+  private:
     void main(tcp::connection_t conn);
     void update_trackers(int count);
     void update_nodes();
-
-    socket_addr_t remote_server_address;
-
-    event_context_t *context;
-
-    std::string key;
 
   public:
     tracker_node_client_t(){};

@@ -1,3 +1,25 @@
+/**
+* \file co.hpp
+* \author kadds (itmyxyf@gmail.com)
+* \brief This is a encapsulation with a stackfull coroutine for the boost library. It consists of a series of coroutine
+chains and runs in them.
+* \version 0.1
+* \date 2020-03-13
+*
+* @copyright Copyright (c) 2020.
+This file is part of P2P-Live.
+
+P2P-Live is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+P2P-Live is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
+*
+*/
+
 #pragma once
 #include "execute_context.hpp"
 #include "net.hpp"
@@ -35,8 +57,8 @@ template <typename T> class async_result_t
         : ok(false)
     {
     }
-    /// 获取结果
-    ///\note 任务未完成时结果未定义
+    /// get result
+    ///\note undefined when task is not completed
     T operator()() { return u.impl_data; }
     bool is_finish() { return ok; };
 };
@@ -44,7 +66,7 @@ template <typename T> class async_result_t
 class coroutine_t;
 
 /// the main coroutine
-/// 主线程的coroutine，保存线程默认栈信息
+/// coroutine of the main thread, save the default stack information of the thread
 thread_local inline coroutine_t *co_cur = nullptr;
 
 ctx::fiber &&co_wrapper(ctx::fiber &&sink, coroutine_t *co);
@@ -57,6 +79,7 @@ class coroutine_stop_exception
 
 class coroutine_t
 {
+    /// boost fiber
     ctx::fiber context;
     /// entry function
     std::function<void()> func;
@@ -68,7 +91,7 @@ class coroutine_t
 
     execute_context_t *econtext;
     bool is_stop;
-    /// don't create at stack as private member
+    /// Don't create in the stack
     coroutine_t(std::function<void()> f)
         : context(std::bind(co_wrapper, std::placeholders::_1, this))
         , func(f)
@@ -84,7 +107,11 @@ class coroutine_t
         coroutine_t *co = new coroutine_t(f);
         return co;
     };
-
+    /**
+     * \brief return current coroutine
+     *
+     * \return coroutine_t*
+     */
     static coroutine_t *current() { return co_cur; }
 
     static bool in_main_coroutine() { return co_cur == nullptr; }
@@ -93,7 +120,8 @@ class coroutine_t
 
     static void remove(coroutine_t *c) { delete c; }
 
-    /// XXX: may be there is a better way to sleep in coroutine
+    /// XXX: Maybe there is a better way to sleep in coroutines
+    /// It invalidates the SOLID principle
     execute_context_t *get_execute_context() { return econtext; }
 
     void set_execute_context(execute_context_t *ec) { econtext = ec; }
@@ -149,7 +177,7 @@ class coroutine_t
             cur->context =
                 std::move(cur->context).resume_with(std::bind(co_reschedule_wrapper, std::placeholders::_1, cur, func));
             if (next->is_stop)
-                remove(next); // 延迟删除coroutine
+                remove(next); // delay removal of coroutine
             return;
         }
         else
@@ -157,7 +185,7 @@ class coroutine_t
             throw std::exception();
         }
     }
-
+    /// When returning to the previous coroutine, the stop flag is set and destroyed.
     void stop() { is_stop = true; }
 };
 
@@ -165,7 +193,7 @@ class paramter_t
 {
     /// how many times called
     int times;
-    //. stop right now because timeout
+    //. stop immediately because timeout
     bool stop;
     void *user_ptr;
 

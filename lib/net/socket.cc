@@ -460,9 +460,9 @@ socket_t *bind_at(socket_t *socket, socket_addr_t socket_to_addr)
     return socket;
 }
 
-socket_t *listen_from(socket_t *socket, int max_count)
+socket_t *listen_from(socket_t *socket, int max_wait_client)
 {
-    if (listen(socket->get_raw_handle(), max_count) != 0)
+    if (listen(socket->get_raw_handle(), max_wait_client) != 0)
     {
         throw net_connect_exception("failed to listen server.", connection_state::no_resource);
     }

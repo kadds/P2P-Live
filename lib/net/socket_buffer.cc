@@ -3,14 +3,14 @@
 
 namespace net
 {
-except_buffer_helper_t except_buffer_helper_t::length(u64 len)
+socket_buffer_t::except_buffer_helper_t socket_buffer_t::except_buffer_helper_t::length(u64 len)
 {
     buf->valid_data_length = len;
     buf->walk_offset = 0;
     return *this;
 }
 
-except_buffer_helper_t except_buffer_helper_t::origin_length()
+socket_buffer_t::except_buffer_helper_t socket_buffer_t::except_buffer_helper_t::origin_length()
 {
     buf->valid_data_length = buf->buffer_size;
     buf->walk_offset = 0;

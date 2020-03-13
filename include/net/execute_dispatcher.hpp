@@ -1,3 +1,23 @@
+/**
+* \file execute_dispatcher.hpp
+* \author kadds (itmyxyf@gmail.com)
+* \brief coroutine dispatcher via FIFO
+* \version 0.1
+* \date 2020-03-13
+*
+* @copyright Copyright (c) 2020.
+This file is part of P2P-Live.
+
+P2P-Live is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+P2P-Live is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
+*
+*/
 #pragma once
 #include "lock.hpp"
 #include <functional>
@@ -8,6 +28,7 @@
 namespace net
 {
 class execute_context_t;
+
 class execute_thread_dispatcher_t
 {
     std::queue<std::tuple<execute_context_t *, std::function<void()>>> co_wait_for_resume;
@@ -16,11 +37,11 @@ class execute_thread_dispatcher_t
     lock::spinlock_t cancel_lock;
 
   public:
-    /// 非线程安全，必须由evenet loop 调用，执行队列中的execute context
+    /// Not thread-safe and must be called by the evenet loop to execute the execute context in the queue
     void dispatch();
-    /// 线程安全函数。取消一个execute context
+    /// Thread-safe functions. Cancel an execute context
     void cancel(execute_context_t *econtext);
-    /// 线程安全函数。将一个execute context添加到队列中，并设置唤醒是执行的函数
+    /// Thread-safe functions. Add an execute context to the queue and set the wakeup function to execute
     void add(execute_context_t *econtext, std::function<void()> func);
 };
 } // namespace net
