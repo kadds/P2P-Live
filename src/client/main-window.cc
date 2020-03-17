@@ -24,8 +24,6 @@ void MainWindow::video_main()
         exit(-1);
     }
 
-    LOG(INFO) << "width: " << video_codec->width << ",height: " << video_codec->height
-              << ",format: " << video_codec->pix_fmt << ",desc: " << video_codec->codec_descriptor->long_name;
     AVPacket *packet;
     AVFrame *frame, *frameYUV;
     if (target_width == 0)
@@ -38,9 +36,31 @@ void MainWindow::video_main()
     }
 
     AVPixelFormat format = AV_PIX_FMT_YUV420P;
+    AVPixelFormat pixFormat;
+    switch (video_codec->pix_fmt)
+    {
+        case AV_PIX_FMT_YUVJ420P:
+            pixFormat = AV_PIX_FMT_YUV420P;
+            break;
+        case AV_PIX_FMT_YUVJ422P:
+            pixFormat = AV_PIX_FMT_YUV422P;
+            break;
+        case AV_PIX_FMT_YUVJ444P:
+            pixFormat = AV_PIX_FMT_YUV444P;
+            break;
+        case AV_PIX_FMT_YUVJ440P:
+            pixFormat = AV_PIX_FMT_YUV440P;
+            break;
+        default:
+            pixFormat = video_codec->pix_fmt;
+            break;
+    }
 
-    auto sws_ctx = sws_getContext(video_codec->width, video_codec->height, video_codec->pix_fmt, target_width,
-                                  target_height, format, SWS_BILINEAR, NULL, NULL, NULL);
+    LOG(INFO) << "video: width: " << video_codec->width << ",height: " << video_codec->height
+              << ",format: " << video_codec->pix_fmt << ",desc: " << video_codec->codec_descriptor->long_name;
+
+    auto sws_ctx = sws_getContext(video_codec->width, video_codec->height, pixFormat, target_width, target_height,
+                                  format, SWS_BILINEAR, NULL, NULL, NULL);
     packet = av_packet_alloc();
     frame = av_frame_alloc();
     frameYUV = av_frame_alloc();
@@ -90,14 +110,13 @@ void MainWindow::video_main()
 
 void MainWindow::audio_main()
 {
-
     if (avcodec_open2(audio_codec, avcodec_find_decoder(audio_codec->codec_id), NULL) < 0)
     {
         LOG(FATAL) << "Could not open audio codec.\n";
         exit(-1);
     }
-    LOG(INFO) << "width: " << audio_codec->width << ",height: " << audio_codec->height
-              << ",format: " << audio_codec->pix_fmt << ",desc: " << audio_codec->codec_descriptor->long_name;
+    LOG(INFO) << "audio: "
+              << ",desc: " << audio_codec->codec_descriptor->long_name;
 }
 
 void MainWindow::get_device()

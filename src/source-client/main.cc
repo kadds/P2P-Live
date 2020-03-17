@@ -325,6 +325,7 @@ int sdl_init(int isVideo)
                 ErrorExit("window init fail");
 
             sdl_renderer = SDL_CreateRenderer(sdl_screen, -1, 0);
+            SDL_ShowWindow(sdl_screen);
             if (!sdl_renderer)
                 ErrorExit("render init fail");
 
