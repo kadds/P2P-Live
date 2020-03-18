@@ -118,12 +118,7 @@ void tracker_server_t::server_main(tcp::connection_t conn)
             // skip head
             send_buffer.walk_step(sizeof(get_nodes_respond_t));
             int i = 0;
-            auto it = nodes.find(remote_addr);
-            if (it == nodes.end())
-            {
-                return;
-            }
-            auto peer_idx = it->second;
+
             auto cur_time = get_current_time();
             if (request.strategy == request_strategy::random)
             {
@@ -141,7 +136,7 @@ void tracker_server_t::server_main(tcp::connection_t conn)
                         if (j == start && over)
                             break;
 
-                        if (peer_idx != j && request.sid == node_infos[j].sid &&
+                        if (request.sid == node_infos[j].sid &&
                             cur_time - node_infos[j].last_ping <= node_tick_times * node_tick_timespan)
                         {
                             // add
@@ -175,7 +170,7 @@ void tracker_server_t::server_main(tcp::connection_t conn)
                         if (j == start && over)
                             break;
 
-                        if (peer_idx != j && node_infos[j].sid == 0 &&
+                        if (node_infos[j].sid == 0 &&
                             cur_time - node_infos[j].last_ping <= node_tick_times * node_tick_timespan)
                         {
                             // add
@@ -766,10 +761,6 @@ void tracker_node_client_t::main(tcp::connection_t conn)
                 connect_handler(*this, node);
         }
         else
-        {
-            return;
-        }
-        if (is_peer_client)
         {
             return;
         }

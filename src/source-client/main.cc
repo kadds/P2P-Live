@@ -120,8 +120,6 @@ int re = 0;
 int i = 0;
 int j = 0;
 
-std::atomic_bool sever_is_connect = false;
-
 ////函数
 int ErrorExit(int errorNum);
 int ErrorExit(std::string errorStr);
@@ -550,10 +548,8 @@ int demux_video(void *)
         }
         else
         {
-            if (sever_is_connect)
-            {
-                send_data((void *)pPacket_Video->data[0], pPacket_Video->size, 0, pPacket_Video->stream_index);
-            }
+            // send_data((void *)pPacket_Video->data[0], pPacket_Video->size, 0, pPacket_Video->stream_index);
+
             packet_push_queue(video_queue, pPacket_Video);
         }
     }
@@ -913,24 +909,23 @@ void testmain()
         cout << flush;
     }
 }
+
 int main(int argc, char *argv[])
 {
     Log(argv);
     // test(argc, argv);//进入mainwindow进行文件测试
-
+    net::init_lib();
     on_connection_error([](net::connection_state state) {
         LOG(INFO) << "reconnecting...";
         return true;
     });
-    on_edge_server_prepared([]() { sever_is_connect = true; });
+    on_edge_server_prepared([]() { LOG(INFO) << "connect to edge server ok..."; });
     init_peer(1, net::socket_addr_t("127.0.0.1", 2769), net::make_timespan(2));
 
-    testmain();
-    return 0;
+    QApplication app(argc, argv);
+    MainWindow mainWindow;
+    mainWindow.show();
+    int v = app.exec();
+    net::uninit_lib();
+    return v;
 }
-//主线程：事件处理
-// demux 音频线程：read
-// demux 视频线程：read
-// decode 音频线程：send&receive encode
-// decode 视频线程：send&receive play encode
-// SDL音频线程（系统调用）

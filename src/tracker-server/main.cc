@@ -8,7 +8,7 @@ DEFINE_string(ip, "0.0.0.0", "tracker server bind ip address");
 DEFINE_uint32(port, 2769, "tracker server port");
 DEFINE_uint32(rudp_port, 2770, "tracker server rudp port");
 DEFINE_uint32(threads, 0, "threads count");
-DEFINE_bool(reuse, false, "resuse address");
+DEFINE_bool(reuse, true, "resuse address");
 
 net::event_context_t *app_context;
 

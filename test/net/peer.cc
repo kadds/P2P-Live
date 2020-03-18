@@ -162,8 +162,8 @@ TEST(PeerTest, TrackerNode)
     {
         tclients[i].config(true, 1, "");
         tclients[i].connect_server(ctx, taddrs1, make_timespan_full());
-        tclients[i].on_nodes_update([](tracker_node_client_t &client, peer_node_t *nodes, u64 count) {
-            GTEST_ASSERT_EQ(count, test_count - 1);
+        tclients[i].on_nodes_update([test_count](tracker_node_client_t &client, peer_node_t *nodes, u64 count) {
+            GTEST_ASSERT_EQ(count, test_count);
         });
         tclients[i].on_trackers_update([taddrs2](tracker_node_client_t &, tracker_node_t *nodes, u64 count) {
             /// always get tserver2 address
@@ -209,7 +209,7 @@ void static peer_main(event_context_t &ctx, socket_addr_t taddr, tracker_node_cl
             if (remote_peers[addr] != nullptr)
                 return;
 
-            peer.connect_to_peer(peer.add_peer(), socket_addr_t(node.ip, node.udp_port));
+            peer.connect_to_peer(peer.add_peer(), addr);
             client.request_connect_node(node, peer.get_udp());
         });
     peer.on_peer_connect([&flags, &ctx, &remote_peers](peer_t &peer, peer_info_t *p) {

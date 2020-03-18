@@ -37,11 +37,13 @@ void server_connect(net::p2p::tracker_node_client_t &client, net::socket_addr_t 
     LOG(ERROR) << "connect to tracker server ok. server: " << remote.to_string();
 }
 
-void node_request_connect(net::p2p::tracker_node_client_t &client, net::p2p::peer_node_t node)
+void node_request_connect(net::p2p::tracker_node_client_t &client, net::p2p::peer_node_t node, net::p2p::peer_t *peer)
 {
     net::socket_addr_t remote(node.ip, node.port);
 
     LOG(INFO) << "new node request connect " << remote.to_string() << " udp:" << node.udp_port << ".";
+
+    client.request_connect_node(node, peer->get_udp());
 }
 
 void on_peer_connect(net::p2p::peer_t &ps, net::p2p::peer_info_t *peer)
@@ -183,13 +185,15 @@ int main(int argc, char **argv)
 
     std::unique_ptr<net::p2p::tracker_node_client_t> tracker_client =
         std::make_unique<net::p2p::tracker_node_client_t>();
+    std::unique_ptr<net::p2p::peer_t> peer = std::make_unique<net::p2p::peer_t>(0);
+
     tracker_client->config(true, 0, "edge server key");
     tracker_client->connect_server(context, net::socket_addr_t(FLAGS_tip, FLAGS_tport), FLAGS_timeout * 1000);
     tracker_client->on_error(server_connect_error);
-    tracker_client->on_node_request_connect(node_request_connect);
+    tracker_client->on_node_request_connect(
+        std::bind(node_request_connect, std::placeholders::_1, std::placeholders::_2, peer.get()));
     tracker_client->on_tracker_server_connect(server_connect);
 
-    std::unique_ptr<net::p2p::peer_t> peer = std::make_unique<net::p2p::peer_t>(0);
     peer->bind(context);
     peer->accept_channels({1, 2});
     peer->on_peer_connect(on_peer_connect);

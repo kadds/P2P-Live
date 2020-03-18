@@ -15,6 +15,8 @@ std::function<void()> edge_server_prepared_handler;
 peer_t *glob_peer;
 peer_info_t *edge_peer_target = nullptr;
 
+std::atomic_bool is_connect_edge_server = false;
+
 void thread_main(u64 sid, socket_addr_t ts_server_addr, microsecond_t timeout)
 {
     event_context_t context(event_strategy::epoll);
@@ -25,6 +27,8 @@ void thread_main(u64 sid, socket_addr_t ts_server_addr, microsecond_t timeout)
     tracker->config(false, sid, "");
     tracker->connect_server(*app_context, ts_server_addr, timeout);
     tracker->on_error([ts_server_addr, timeout](tracker_node_client_t &t, socket_addr_t addr, connection_state state) {
+        is_connect_edge_server = false;
+
         if (error_handler)
         {
             if (error_handler(state))
@@ -42,7 +46,7 @@ void thread_main(u64 sid, socket_addr_t ts_server_addr, microsecond_t timeout)
 
     tracker->on_tracker_server_connect([](tracker_node_client_t &c, socket_addr_t) {
         c.request_update_trackers();
-        c.request_update_nodes(1, request_strategy::edge_node);
+        c.request_update_nodes(2, request_strategy::edge_node);
     });
 
     tracker->on_nodes_update([](tracker_node_client_t &c, peer_node_t *nodes, u64 count) {
@@ -63,22 +67,25 @@ void thread_main(u64 sid, socket_addr_t ts_server_addr, microsecond_t timeout)
             }
             return;
         }
-
+        c.request_connect_node(nodes[0], glob_peer->get_udp());
         auto info = glob_peer->add_peer();
-        glob_peer->connect_to_peer(info, socket_addr_t(nodes[0].ip, nodes[0].port));
+        glob_peer->connect_to_peer(info, socket_addr_t(nodes[0].ip, nodes[0].udp_port));
     });
-
+    peer->bind(context);
+    peer->accept_channels({1, 2});
     peer->on_peer_connect([](peer_t &, peer_info_t *info) {
         if (edge_peer_target != nullptr)
         {
             LOG(ERROR) << "invalid state, new target " << info->remote_address.to_string();
         }
         edge_peer_target = info;
+        is_connect_edge_server = true;
         if (edge_server_prepared_handler)
             edge_server_prepared_handler();
     });
 
     peer->on_peer_disconnect([](peer_t &, peer_info_t *info) {
+        is_connect_edge_server = false;
         if (edge_peer_target != info)
         {
             LOG(ERROR) << "invalid state, new target " << info->remote_address.to_string();
@@ -106,7 +113,7 @@ void init_peer(u64 sid, socket_addr_t ts_server_addr, microsecond_t timeout)
 
 void send_data(void *buffer_ptr, int size, int channel, net::u64 fragment_id)
 {
-    if (glob_peer)
+    if (glob_peer && is_connect_edge_server)
     {
         socket_buffer_t buffer(size);
         memcpy(buffer.get(), buffer_ptr, size);
@@ -118,7 +125,7 @@ void send_data(void *buffer_ptr, int size, int channel, net::u64 fragment_id)
 
 void send_meta_info(void *buffer_ptr, int size, int channel, int key)
 {
-    if (glob_peer)
+    if (glob_peer && is_connect_edge_server)
     {
         socket_buffer_t buffer(size);
         memcpy(buffer.get(), buffer_ptr, size);
@@ -126,6 +133,8 @@ void send_meta_info(void *buffer_ptr, int size, int channel, int key)
             [buffer, channel, key]() { glob_peer->send_meta_data_to_peer(edge_peer_target, key, channel, buffer); });
     }
 }
+
+bool is_connect() { return is_connect_edge_server; }
 
 void on_connection_error(std::function<bool(net::connection_state)> func) { error_handler = func; }
 

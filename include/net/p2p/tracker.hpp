@@ -346,6 +346,8 @@ class tracker_node_client_t
     void connect_server(event_context_t &context, socket_addr_t addr, microsecond_t timeout);
 
     void request_update_trackers();
+
+    ///\note the nodes can contain self
     tracker_node_client_t &on_nodes_update(nodes_update_handler_t handler);
 
     void request_update_nodes(int max_request_count, request_strategy strategy);
