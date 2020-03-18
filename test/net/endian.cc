@@ -27,8 +27,6 @@ struct data_t
 
 TEST(EndianTest, Test)
 {
-    GTEST_ASSERT_EQ(net::endian::little_endian(), true);
-
     data_t data;
 
     data2_t data2;

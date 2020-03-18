@@ -88,7 +88,7 @@ Coroutine uses:
 3. RUDP
    Reliable UDP is built by KCP(ARQ) from UDP. A coroutine is built when tell RUDP to establish a new connection. Each connection has a send/recv queue and does not block each other.  
 
-Coroutine dispatcher:
+How coroutines are scheduled? 
 The scheduler has a dispatch queue and dispatches via FIFO. No need for cross-thread scheduling.
 
 ### Thread pool

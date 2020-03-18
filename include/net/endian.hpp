@@ -135,7 +135,7 @@ template <typename T, typename Typelist> inline void cast_struct_impl(void *val)
 
 template <typename T> inline void cast_struct(T &val)
 {
-    static_assert(std::is_pod_v<T>, "struct should be a POD type.");
+    static_assert(std::is_pod_v<T> && !std::is_union_v<T>, "struct should be a POD type.");
     using Typelist = typename T::member_list_t;
     cast<typename Typelist::Type>(*(typename Typelist::Type *)&val);
 

@@ -75,6 +75,7 @@ struct timer_registered_t
 struct time_manager_t
 {
     microsecond_t precision;
+    /// a minimum heap for timers
     std::priority_queue<timer_slot_t *, std::vector<timer_slot_t *>, timer_cmp> queue;
     map_t map;
 

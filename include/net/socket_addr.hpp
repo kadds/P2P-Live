@@ -34,9 +34,14 @@ class socket_addr_t
     socket_addr_t(u32 addr, int port);
     socket_addr_t(sockaddr_in addr);
     socket_addr_t(std::string addr, int port);
+
+    /// return string like ip:port
     std::string to_string() const;
+    /// return ip string
     std::string get_addr() const;
+    /// get address local endian
     u32 v4_addr() const;
+
     int get_port() const;
 
     sockaddr_in get_raw_addr() { return so_addr; }

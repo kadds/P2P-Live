@@ -37,8 +37,10 @@ class execute_thread_dispatcher_t
     lock::spinlock_t cancel_lock;
 
   public:
-    /// Not thread-safe and must be called by the evenet loop to execute the execute context in the queue
+    /// Not thread-safe and must be called by the event loop to execute the execute context in the queue.
+    ///\note this function is called automatically in event loop.
     void dispatch();
+
     /// Thread-safe functions. Cancel an execute context
     void cancel(execute_context_t *econtext);
     /// Thread-safe functions. Add an execute context to the queue and set the wakeup function to execute

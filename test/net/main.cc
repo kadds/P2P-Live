@@ -5,5 +5,7 @@ int main(int argc, char **argv)
     testing::InitGoogleTest(&argc, argv);
     net::init_lib();
 
-    return RUN_ALL_TESTS();
+    int v = RUN_ALL_TESTS();
+    net::uninit_lib();
+    return v;
 }
