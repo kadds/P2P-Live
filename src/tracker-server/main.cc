@@ -23,14 +23,15 @@ static void atexit_func()
 void on_shared_peer_add(net::p2p::tracker_server_t &server, net::p2p::peer_node_t node, net::u64 sid)
 {
     net::socket_addr_t addr(node.ip, node.port);
-    LOG(INFO) << "new shared peer " << addr.to_string() << " udp: " << node.port << " sid: " << sid;
+    LOG(INFO) << "new shared peer " << addr.to_string() << " udp: " << node.udp_port << " sid: " << sid;
 }
 
 void on_shared_peer_remove(net::p2p::tracker_server_t &server, net::p2p::peer_node_t node, net::u64 sid)
 {
     net::socket_addr_t addr(node.ip, node.port);
-    LOG(INFO) << "exit shared peer " << addr.to_string() << " udp: " << node.port << " sid " << sid;
+    LOG(INFO) << "exit shared peer " << addr.to_string() << " udp: " << node.udp_port << " sid " << sid;
 }
+
 void on_shared_peer_error(net::p2p::tracker_server_t &server, net::socket_addr_t addr, net::u64 sid,
                           net::connection_state state)
 
@@ -43,7 +44,7 @@ void on_peer_hole_connect(net::p2p::tracker_server_t &server, net::p2p::peer_nod
 {
     net::socket_addr_t addr(node.ip, node.port);
 
-    LOG(INFO) << "peer ->" << addr.to_string();
+    LOG(INFO) << "peer request connect to -> " << addr.to_string();
 }
 
 int main(int argc, char **argv)

@@ -81,7 +81,6 @@ class rudp_impl_t
                 ikcp_update(ep->ikcp, (get_current_time() - base_time) / 1000);
                 set_timer(ep);
             });
-            ep->econtext.wake_up_thread();
         }));
     }
 
@@ -388,7 +387,6 @@ class rudp_impl_t
                 endpoint->recv_queue.push(std::move(recv_buffer));
             }
             endpoint->econtext.start();
-            endpoint->econtext.get_loop()->wake_up();
 
             recv_buffer = socket_buffer_t(1472);
         }

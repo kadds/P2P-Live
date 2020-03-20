@@ -83,13 +83,16 @@ void tracker_server_t::server_main(tcp::connection_t conn)
             get_tracker_info_respond_t respond;
             socket_buffer_t buffer = socket_buffer_t::from_struct(respond);
             buffer.expect().origin_length();
-            respond.tudp_port = udp_port;
-            respond.cip = server.get_socket()->local_addr().v4_addr();
-            respond.cport = server.get_socket()->local_addr().get_port();
+            respond.tudp_port = udp_port; // server udp port
+            /// get address NAT
+            respond.cip = conn.get_socket()->remote_addr().v4_addr();
+            respond.cport = conn.get_socket()->remote_addr().get_port();
+
             endian::cast_inplace(respond, buffer);
+            buffer.expect().origin_length();
             head.version = 4;
-            head.v4.size = sizeof(respond);
             head.v4.msg_type = tracker_packet::get_tracker_info_respond;
+
             co::await(tcp::conn_awrite_packet, conn, head, buffer);
         }
         else if (head.v4.msg_type == tracker_packet::get_nodes_request)
@@ -406,7 +409,7 @@ void tracker_server_t::udp_main(rudp_connection_t conn)
     if (request.from_port == 0)
         return;
 
-    socket_addr_t from_node_addr(request.from_ip, request.from_port);
+    socket_addr_t from_node_addr(request.target_ip, request.target_port);
     auto it = nodes.find(from_node_addr);
     if (it == nodes.end())
         return;
@@ -418,13 +421,13 @@ void tracker_server_t::udp_main(rudp_connection_t conn)
     /// NOTE: this port may be a NAT port
     request.from_udp_port = conn.address.get_port();
 
-    node_info.conn.get_socket()->start_with([tcpconn, request, this]() {
+    node_info.conn.get_socket()->start_with([tcpconn, request, this, node_info]() {
         if (normal_peer_connect_handler)
         {
             peer_node_t node;
-            node.ip = request.from_ip;
-            node.port = request.from_port;
-            node.udp_port = request.from_udp_port;
+            node.ip = request.target_ip;
+            node.port = request.target_port;
+            node.udp_port = 0;
             normal_peer_connect_handler(*this, node);
         }
         tcp::package_head_t head;
@@ -750,7 +753,7 @@ void tracker_node_client_t::main(tcp::connection_t conn)
             co::await(tcp::conn_aread_packet_content, conn, buffer);
             endian::cast_inplace(request, buffer);
 
-            if (request.magic != conn_request_magic || request.sid != sid)
+            if (request.magic != conn_request_magic || (request.sid != sid && sid != 0))
                 continue;
             peer_node_t node;
             node.ip = request.from_ip;
@@ -856,10 +859,10 @@ void tracker_node_client_t::request_update_nodes(int max_count, request_strategy
 
 void tracker_node_client_t::request_connect_node(peer_node_t node, rudp_t &udp)
 {
-    socket_addr_t peer_addr(node.ip, node.udp_port);
-    udp.add_connection(peer_addr, 0, timeout, [this, &udp, node](rudp_connection_t conn) {
+    udp.add_connection(server_udp_address, 0, timeout, [this, &udp, node](rudp_connection_t conn) {
         udp_connection_request_t req;
         socket_buffer_t buffer = socket_buffer_t::from_struct(req);
+        req.magic = conn_request_magic;
         req.from_ip = client_outer_ip;
         req.from_port = client_outer_port;
         req.from_udp_port = udp.get_socket()->local_addr().get_port();

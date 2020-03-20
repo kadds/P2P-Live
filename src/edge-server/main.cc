@@ -26,7 +26,7 @@ void server_connect_error(net::p2p::tracker_node_client_t &client, net::socket_a
 {
     LOG(ERROR) << "connect to tracker server failed. server: " << remote.to_string()
                << ", reason: " << net::connection_state_strings[(int)state] << ".";
-    LOG(INFO) << "sleep 5 second to reconnect server.";
+    LOG(INFO) << "sleep 5 seconds to reconnect server.";
     net::event_loop_t::current().add_timer(net::make_timer(net::make_timespan(5), [&client]() {
         client.connect_server(*app_context, net::socket_addr_t(FLAGS_tip, FLAGS_tport), FLAGS_timeout * 1000);
     }));
@@ -34,16 +34,20 @@ void server_connect_error(net::p2p::tracker_node_client_t &client, net::socket_a
 
 void server_connect(net::p2p::tracker_node_client_t &client, net::socket_addr_t remote)
 {
-    LOG(ERROR) << "connect to tracker server ok. server: " << remote.to_string();
+    LOG(INFO) << "connect to tracker server ok. server: " << remote.to_string();
 }
 
 void node_request_connect(net::p2p::tracker_node_client_t &client, net::p2p::peer_node_t node, net::p2p::peer_t *peer)
 {
     net::socket_addr_t remote(node.ip, node.port);
-
-    LOG(INFO) << "new node request connect " << remote.to_string() << " udp:" << node.udp_port << ".";
-
-    client.request_connect_node(node, peer->get_udp());
+    net::socket_addr_t udp_remote(net::socket_addr_t(node.ip, node.udp_port));
+    if (!peer->has_connect_peer(udp_remote))
+    {
+        LOG(INFO) << "node request connect " << remote.to_string() << " udp:" << node.udp_port << ".";
+        auto info = peer->add_peer();
+        peer->connect_to_peer(info, udp_remote);
+        client.request_connect_node(node, peer->get_udp());
+    }
 }
 
 void on_peer_connect(net::p2p::peer_t &ps, net::p2p::peer_info_t *peer)
@@ -202,6 +206,7 @@ int main(int argc, char **argv)
     peer->on_fragment_recv(on_fragment_recv);
     peer->on_meta_pull_request(on_meta_pull_request);
     peer->on_meta_data_recv(on_meta_data_recv);
+    LOG(INFO) << "udp bind at port " << peer->get_udp().get_socket()->local_addr().get_port();
 
     LOG(INFO) << "run event loop";
     auto ret = app_context->run();

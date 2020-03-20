@@ -43,9 +43,17 @@ void execute_context_t::stop_for(microsecond_t ms)
     loop->remove_timer(timer);
 }
 
-void execute_context_t::start() { loop->get_dispatcher().add(this, std::function<void()>()); }
+void execute_context_t::start()
+{
+    loop->get_dispatcher().add(this, std::function<void()>());
+    wake_up_thread();
+}
 
-void execute_context_t::start_with(std::function<void()> func) { loop->get_dispatcher().add(this, func); }
+void execute_context_t::start_with(std::function<void()> func)
+{
+    loop->get_dispatcher().add(this, func);
+    wake_up_thread();
+}
 
 void execute_context_t::run(std::function<void()> func)
 {

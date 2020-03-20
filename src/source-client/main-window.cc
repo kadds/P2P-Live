@@ -34,7 +34,6 @@ MainWindow::MainWindow(QWidget *parent)
 
 void MainWindow::video_main()
 {
-
     if (avcodec_open2(video_codec, avcodec_find_decoder(video_codec->codec_id), NULL) < 0)
     {
         LOG(FATAL) << "Could not open video codec.\n";
@@ -86,35 +85,37 @@ void MainWindow::video_main()
     char *out_buffer = new char[vsize];
     avpicture_fill((AVPicture *)frameYUV, (const uint8_t *)out_buffer, format, video_codec->width, video_codec->height);
     auto size_byte = video_codec->width * video_codec->height;
+    int dec_frame = 0;
     while (run)
     {
-        if (av_read_frame(video_format_ctx, packet) < 0)
+        if (av_read_frame(video_format_ctx, packet) != 0)
         {
             LOG(INFO) << "read from stream failed";
             continue;
         }
-        int dec_frame = 0;
-        auto ret = avcodec_decode_video2(video_codec, frame, &dec_frame, packet);
-
-        if (ret < 0)
+        if (avcodec_send_packet(video_codec, packet) != 0)
         {
-            LOG(INFO) << "decode from stream failed";
+            LOG(WARNING) << "decode from stream failed";
             continue;
         }
-        sws_scale(sws_ctx, (const unsigned char *const *)frame->data, frame->linesize, 0, video_codec->height,
-                  frameYUV->data, frameYUV->linesize);
-        std::shared_ptr<char[]> dataframe(new char[vsize]);
-        int offset = 0;
-        memcpy(dataframe.get(), frameYUV->data[0], size_byte);
-        offset += size_byte;
-        memcpy(dataframe.get() + offset, frameYUV->data[1], size_byte >> 2);
-        offset += size_byte >> 2;
-        memcpy(dataframe.get() + offset, frameYUV->data[2], size_byte >> 2);
+        send_data(packet->data, packet->size, 1, dec_frame++);
 
-        send_data(dataframe.get(), vsize, 1, dec_frame);
-        QMetaObject::invokeMethod(ui->display, "update_frame", Qt::QueuedConnection,
-                                  Q_ARG(std::shared_ptr<char[]>, std::move(dataframe)), Q_ARG(int, frame->width),
-                                  Q_ARG(int, frame->height));
+        while (avcodec_receive_frame(video_codec, frame) == 0)
+        {
+            sws_scale(sws_ctx, (const unsigned char *const *)frame->data, frame->linesize, 0, video_codec->height,
+                      frameYUV->data, frameYUV->linesize);
+            std::shared_ptr<char[]> dataframe(new char[vsize]);
+            int offset = 0;
+            memcpy(dataframe.get(), frameYUV->data[0], size_byte);
+            offset += size_byte;
+            memcpy(dataframe.get() + offset, frameYUV->data[1], size_byte >> 2);
+            offset += size_byte >> 2;
+            memcpy(dataframe.get() + offset, frameYUV->data[2], size_byte >> 2);
+
+            QMetaObject::invokeMethod(ui->display, "update_frame", Qt::QueuedConnection,
+                                      Q_ARG(std::shared_ptr<char[]>, std::move(dataframe)), Q_ARG(int, frame->width),
+                                      Q_ARG(int, frame->height));
+        }
         av_free_packet(packet);
     }
     av_free_packet(packet);
@@ -123,7 +124,7 @@ void MainWindow::video_main()
     sws_freeContext(sws_ctx);
     delete[] out_buffer;
 
-    avcodec_close(video_codec);
+    avcodec_free_context(&video_codec);
 }
 
 void MainWindow::audio_main()
@@ -134,37 +135,66 @@ void MainWindow::audio_main()
         exit(-1);
     }
     LOG(INFO) << "audio: "
-              << ",desc: " << audio_codec->codec_descriptor->long_name;
+              << "desc: " << audio_codec->codec_descriptor->long_name;
     auto packet = av_packet_alloc();
     auto frame = av_frame_alloc();
+    int dec_frame = 0;
     while (run)
     {
-        if (av_read_frame(audio_format_ctx, packet) < 0)
+        if (av_read_frame(audio_format_ctx, packet) != 0)
         {
             LOG(INFO) << "read from stream failed";
             continue;
         }
-        int dec_frame = 0;
-        auto ret = avcodec_decode_audio4(audio_codec, frame, &dec_frame, packet);
 
-        if (ret < 0)
+        if (avcodec_send_packet(audio_codec, packet) != 0)
         {
-            LOG(INFO) << "decode audio from stream failed";
+            LOG(WARNING) << "decode audio from stream failed";
             continue;
         }
-        /// TODO: play audio and send audio
+        send_data(packet->data, packet->size, 2, dec_frame++);
+
+        while (avcodec_receive_frame(audio_codec, frame) == 0)
+        {
+
+            /// TODO: play audio and send audio
+        }
         av_free_packet(packet);
     }
     av_free_packet(packet);
     av_frame_free(&frame);
-    avcodec_close(audio_codec);
+    avcodec_free_context(&audio_codec);
+}
+
+void ffmpeg_logger(void *avcl, int level, const char *fmt, va_list vl)
+{
+    if (level >= AV_LOG_INFO)
+    {
+        return;
+    }
+    char log_buffer[128];
+    log_buffer[vsnprintf(log_buffer, 127, fmt, vl)] = 0;
+
+    if (level >= AV_LOG_WARNING)
+    {
+        LOG(WARNING) << log_buffer;
+    }
+    else if (level >= AV_LOG_ERROR)
+    {
+        // LOG(ERROR) << log_buffer;
+    }
+    else
+    {
+        LOG(FATAL) << log_buffer;
+    }
 }
 
 void MainWindow::get_device()
 {
+    av_log_set_callback(ffmpeg_logger);
+    av_log_set_level(AV_LOG_ERROR);
     avdevice_register_all();
-    avcodec_register_all();
-    av_register_all();
+
     AVFormatContext *format_ctx = nullptr;
 
     std::unordered_map<std::string, std::vector<std::string>> devs = {

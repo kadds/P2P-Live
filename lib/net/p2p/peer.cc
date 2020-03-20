@@ -18,15 +18,15 @@ void peer_t::bind_udp()
 {
     udp.on_new_connection(std::bind(&peer_t::main, this, std::placeholders::_1));
     udp.on_unknown_packet([this](socket_addr_t addr) {
-        if (peers.find(addr) != peers.end()) // if peer is registed. add udp connection
-        {
-            udp.add_connection(addr, 0, make_timespan(disconnect_tick));
-            for (auto c : channels)
-                udp.add_connection(addr, c, make_timespan(disconnect_tick));
+        /// always accept
+        if (peers.count(addr) == 0)
+            peers.emplace(addr, std::move(std::make_unique<peer_info_t>()));
 
-            return true;
-        }
-        return false;
+        udp.add_connection(addr, 0, make_timespan(disconnect_tick));
+        for (auto c : channels)
+            udp.add_connection(addr, c, make_timespan(disconnect_tick));
+
+        return true;
     });
 }
 
@@ -321,21 +321,21 @@ void peer_t::heartbeat(rudp_connection_t conn)
     co::await(rudp_awrite, &udp, conn, buffer);
 }
 
-void peer_t::connect_to_peer(peer_info_t *peer, socket_addr_t remote_addr)
+void peer_t::connect_to_peer(peer_info_t *peer, socket_addr_t remote_peer_udp_addr)
 {
-    peer->remote_address = remote_addr;
+    peer->remote_address = remote_peer_udp_addr;
     for (auto it = noconnect_peers.begin(); it != noconnect_peers.end(); ++it)
     {
         if (it->get() == peer)
         {
-            peers.emplace(remote_addr, std::move(*it));
+            peers.emplace(remote_peer_udp_addr, std::move(*it));
             noconnect_peers.erase(it);
 
             /// inactive timeout
-            udp.add_connection(remote_addr, 0, make_timespan(disconnect_tick));
+            udp.add_connection(remote_peer_udp_addr, 0, make_timespan(disconnect_tick));
             for (auto c : channels)
             {
-                udp.add_connection(remote_addr, c, make_timespan(disconnect_tick));
+                udp.add_connection(remote_peer_udp_addr, c, make_timespan(disconnect_tick));
             }
             return;
         }
@@ -353,6 +353,8 @@ void peer_t::disconnect(peer_info_t *peer)
         peers.erase(it);
     }
 }
+
+bool peer_t::has_connect_peer(socket_addr_t remote_peer_udp_addr) { return peers.count(remote_peer_udp_addr) > 0; }
 
 peer_t &peer_t::on_peer_disconnect(peer_disconnect_t handler)
 {

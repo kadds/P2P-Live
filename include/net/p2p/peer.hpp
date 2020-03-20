@@ -176,7 +176,7 @@ struct channel_info_t
 struct peer_info_t
 {
     std::unordered_map<channel_t, channel_info_t> channel; // map channel -> channel info
-
+    /// udp port address
     socket_addr_t remote_address;
     u64 sid;
     microsecond_t last_ping;
@@ -255,8 +255,10 @@ class peer_t
     void accept_channels(const std::vector<channel_t> &channels);
 
     peer_info_t *add_peer();
-    void connect_to_peer(peer_info_t *peer, socket_addr_t remote_addr);
+    void connect_to_peer(peer_info_t *peer, socket_addr_t remote_peer_udp_addr);
     void disconnect(peer_info_t *peer);
+
+    bool has_connect_peer(socket_addr_t remote_peer_udp_addr);
 
     peer_t &on_meta_data_recv(peer_data_recv_t handler);
     peer_t &on_fragment_recv(peer_data_recv_t handler);

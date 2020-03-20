@@ -67,13 +67,13 @@ void thread_main(u64 sid, socket_addr_t ts_server_addr, microsecond_t timeout)
             }
             return;
         }
+        auto addr = socket_addr_t(nodes[0].ip, nodes[0].udp_port);
         c.request_connect_node(nodes[0], glob_peer->get_udp());
-        auto info = glob_peer->add_peer();
-        glob_peer->connect_to_peer(info, socket_addr_t(nodes[0].ip, nodes[0].udp_port));
     });
     peer->bind(context);
     peer->accept_channels({1, 2});
     peer->on_peer_connect([](peer_t &, peer_info_t *info) {
+        LOG(INFO) << "peer server connect ok";
         if (edge_peer_target != nullptr)
         {
             LOG(ERROR) << "invalid state, new target " << info->remote_address.to_string();
@@ -99,6 +99,7 @@ void thread_main(u64 sid, socket_addr_t ts_server_addr, microsecond_t timeout)
             edge_peer_target = nullptr;
         }
     });
+    LOG(INFO) << "udp bind at port " << peer->get_udp().get_socket()->local_addr().get_port();
 
     context.run();
     glob_peer = nullptr;
