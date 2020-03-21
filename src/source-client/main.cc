@@ -128,7 +128,7 @@ int packet_pop_queue(PacketQueue *queue, AVPacket *packet);
 int packet_push_queue(PacketQueue *queue, AVPacket *packet);
 
 void atexit_func() { google::ShutdownGoogleLogging(); }
-void Log(char *argv[])
+void set_logger(char *argv[])
 {
     google::InitGoogleLogging(argv[0]);
     google::SetLogDestination(google::GLOG_FATAL, "./source-client.fatal.log");
@@ -842,15 +842,7 @@ int ErrorExit(int errorNum, std::string errorStr)
     exit(-1);
     return 0;
 }
-int test(int argc, char *argv[])
-{ // std::cout  << fps << std::endl << r2d(pCodecCtx_Video->framerate);
-  // cout << video_format << endl;
 
-    // QApplication app(argc, argv);
-    // MainWindow mainWindow;
-    // mainWindow.show();
-    // return app.exec();
-}
 void testmain()
 {
     init();
@@ -912,14 +904,14 @@ void testmain()
 
 int main(int argc, char *argv[])
 {
-    Log(argv);
+    set_logger(argv);
     // test(argc, argv);//进入mainwindow进行文件测试
     net::init_lib();
     on_connection_error([](net::connection_state state) {
         LOG(INFO) << "reconnecting...";
         return true;
     });
-    on_edge_server_prepared([]() { LOG(INFO) << "connect to edge server ok..."; });
+    on_edge_server_prepared([]() { LOG(INFO) << "connect to edge server ok"; });
     init_peer(1, net::socket_addr_t("127.0.0.1", 2769), net::make_timespan(2));
 
     QApplication app(argc, argv);

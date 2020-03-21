@@ -1,6 +1,8 @@
 #pragma once
 #include <QMainWindow>
+#include <condition_variable>
 #include <iostream>
+#include <mutex>
 #include <string>
 #include <thread>
 extern "C" {
@@ -33,4 +35,7 @@ class MainWindow : public QMainWindow
     int videoindex;
     int audioindex;
     AVCodecContext *video_codec, *audio_codec;
+
+    std::mutex device_ready;
+    std::condition_variable cond_dev;
 };

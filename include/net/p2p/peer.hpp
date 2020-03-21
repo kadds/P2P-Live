@@ -24,6 +24,7 @@ along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
 #include "../rudp.hpp"
 #include "../socket_addr.hpp"
 #include "../tcp.hpp"
+#include "msg.hpp"
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -67,97 +68,6 @@ class socket_t;
 
 namespace net::p2p
 {
-using fragment_id_t = u64;
-using session_id_t = u32;
-using channel_t = u8;
-
-namespace peer_msg_type
-{
-enum : u8
-{
-    init_request = 0,
-    init_respond,
-    fragment_request,
-    fragment_respond,
-    fragment_respond_rest,
-
-    meta_respond = 9,
-
-    cancel = 10,
-    get_meta = 11,
-    key_exchange = 12,
-
-    heart = 0xFF,
-};
-}
-// ---------------- request/respond begin ----------------
-#pragma pack(push, 1)
-
-struct peer_init_request_t
-{
-    u8 type;
-    session_id_t sid;
-    using member_list_t = serialization::typelist_t<u8, session_id_t>;
-};
-
-struct peer_fragment_request_t
-{
-    u8 type;
-    u8 priority;
-    u8 count;
-    fragment_id_t ids[0];
-    using member_list_t = serialization::typelist_t<u8, u8, u8>;
-};
-
-struct peer_cancel_t
-{
-    u8 type;
-    u8 count;
-    fragment_id_t id[0];
-    using member_list_t = serialization::typelist_t<u8, u8>;
-};
-
-struct peer_request_metainfo_t
-{
-    u8 type;
-    u64 key;
-    using member_list_t = serialization::typelist_t<u8, u64>;
-};
-
-struct peer_init_respond_t
-{
-    u8 type;
-    fragment_id_t first_data_id;
-    fragment_id_t last_data_id;
-    using member_list_t = serialization::typelist_t<u8, fragment_id_t, fragment_id_t>;
-};
-
-struct peer_fragment_respond_t
-{
-    u8 type;
-    fragment_id_t fid;
-    u32 frame_size;
-    u8 data[0];
-    using member_list_t = serialization::typelist_t<u8, fragment_id_t, u32>;
-};
-
-struct peer_fragment_rest_respond_t
-{
-    u8 type;
-    u8 data[0];
-    using member_list_t = serialization::typelist_t<u8>;
-};
-
-struct peer_meta_respond_t
-{
-    u8 type;
-    u64 key;
-    u8 data[0];
-    using member_list_t = serialization::typelist_t<u8, u64>;
-};
-
-#pragma pack(pop)
-// ----------------------- request/respond end ---------------------
 
 struct channel_info_t
 {

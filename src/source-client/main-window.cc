@@ -27,13 +27,13 @@ MainWindow::MainWindow(QWidget *parent)
     ui->setupUi(this);
     this->setWindowTitle("P2P Live");
 
-    get_device();
     video_thread = std::thread(std::bind(&MainWindow::video_main, this));
     audio_thread = std::thread(std::bind(&MainWindow::audio_main, this));
 }
 
 void MainWindow::video_main()
 {
+    get_device();
     if (avcodec_open2(video_codec, avcodec_find_decoder(video_codec->codec_id), NULL) < 0)
     {
         LOG(FATAL) << "Could not open video codec.\n";
@@ -80,10 +80,11 @@ void MainWindow::video_main()
     packet = av_packet_alloc();
     frame = av_frame_alloc();
     frameYUV = av_frame_alloc();
-    auto vsize = avpicture_get_size(format, video_codec->width, video_codec->height);
+    auto vsize = av_image_get_buffer_size(format, video_codec->width, video_codec->height, 4);
 
     char *out_buffer = new char[vsize];
-    avpicture_fill((AVPicture *)frameYUV, (const uint8_t *)out_buffer, format, video_codec->width, video_codec->height);
+    av_image_fill_arrays(frameYUV->data, frameYUV->linesize, (const uint8_t *)out_buffer, format, video_codec->width,
+                         video_codec->height, 4);
     auto size_byte = video_codec->width * video_codec->height;
     int dec_frame = 0;
     while (run)
@@ -116,9 +117,9 @@ void MainWindow::video_main()
                                       Q_ARG(std::shared_ptr<char[]>, std::move(dataframe)), Q_ARG(int, frame->width),
                                       Q_ARG(int, frame->height));
         }
-        av_free_packet(packet);
+        av_packet_unref(packet);
     }
-    av_free_packet(packet);
+    av_packet_unref(packet);
     av_frame_free(&frameYUV);
     av_frame_free(&frame);
     sws_freeContext(sws_ctx);
@@ -129,6 +130,9 @@ void MainWindow::video_main()
 
 void MainWindow::audio_main()
 {
+    std::unique_lock<std::mutex> lck(device_ready);
+    cond_dev.wait(lck);
+
     if (avcodec_open2(audio_codec, avcodec_find_decoder(audio_codec->codec_id), NULL) < 0)
     {
         LOG(FATAL) << "Could not open audio codec.\n";
@@ -159,9 +163,9 @@ void MainWindow::audio_main()
 
             /// TODO: play audio and send audio
         }
-        av_free_packet(packet);
+        av_packet_unref(packet);
     }
-    av_free_packet(packet);
+    av_packet_unref(packet);
     av_frame_free(&frame);
     avcodec_free_context(&audio_codec);
 }
@@ -225,22 +229,31 @@ void MainWindow::get_device()
             bool used = false;
             for (int i = 0; i < format_ctx->nb_streams; i++)
             {
-                if (format_ctx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO && videoindex == -1)
+                if (format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && videoindex == -1)
                 {
                     videoindex = i;
-                    video_codec = format_ctx->streams[i]->codec;
+                    AVCodec *codec = avcodec_find_decoder(format_ctx->streams[i]->codecpar->codec_id);
+                    AVCodecContext *codec_ctx = avcodec_alloc_context3(codec);
+                    avcodec_parameters_to_context(codec_ctx, format_ctx->streams[i]->codecpar);
+                    av_codec_set_pkt_timebase(codec_ctx, format_ctx->streams[i]->time_base);
+                    video_codec = codec_ctx;
                     video_format_ctx = format_ctx;
                     format_ctx = nullptr;
                     used = true;
                     break;
                 }
-                else if (format_ctx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO && audioindex == -1)
+                else if (format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && audioindex == -1)
                 {
                     audioindex = i;
-                    audio_codec = format_ctx->streams[i]->codec;
+                    AVCodec *codec = avcodec_find_decoder(format_ctx->streams[i]->codecpar->codec_id);
+                    AVCodecContext *codec_ctx = avcodec_alloc_context3(codec);
+                    avcodec_parameters_to_context(codec_ctx, format_ctx->streams[i]->codecpar);
+                    av_codec_set_pkt_timebase(codec_ctx, format_ctx->streams[i]->time_base);
+                    audio_codec = codec_ctx;
                     audio_format_ctx = format_ctx;
                     format_ctx = nullptr;
                     used = true;
+                    cond_dev.notify_one();
                     break;
                 }
             }
