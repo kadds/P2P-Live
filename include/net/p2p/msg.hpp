@@ -25,8 +25,11 @@
 #include "../net.hpp"
 namespace net::p2p
 {
+/// frame id
 using fragment_id_t = u64;
+/// session id: room id
 using session_id_t = u32;
+/// channel: 0: init, 1: video, 2: audio
 using channel_t = u8;
 
 namespace peer_msg_type
@@ -63,11 +66,13 @@ struct peer_fragment_request_t
 {
     u8 type;
     u8 priority;
+    /// Number of fragment requests
     u8 count;
     fragment_id_t ids[0];
     using member_list_t = serialization::typelist_t<u8, u8, u8>;
 };
 
+/// cancel a peer fragment request
 struct peer_cancel_t
 {
     u8 type;
@@ -79,6 +84,7 @@ struct peer_cancel_t
 struct peer_request_metainfo_t
 {
     u8 type;
+    /// key is defined by user
     u64 key;
     using member_list_t = serialization::typelist_t<u8, u64>;
 };
@@ -191,6 +197,7 @@ struct get_tracker_info_respond_t
 struct init_connection_t
 {
     u64 register_sid; /// key must be set when sid is 0 (present edge server)
+    /// this key is required when register sid is 0, others no set
     u8 key[512];
     using member_list_t = serialization::typelist_t<u64, u8[512]>;
 };
@@ -198,6 +205,7 @@ struct init_connection_t
 struct get_nodes_request_t
 {
     u16 max_count;
+    /// sid to get
     u64 sid;
     request_strategy strategy;
     using member_list_t = serialization::typelist_t<u16, u64, u8>;

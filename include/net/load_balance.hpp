@@ -26,7 +26,7 @@ along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
 #include <functional>
 #include <unordered_map>
 
-/// TODO: load balancing server, not finish yet.
+/// TODO: load balancing server, not finish yet. Four level load balancing.
 namespace net
 {
 #pragma pack(push, 1)

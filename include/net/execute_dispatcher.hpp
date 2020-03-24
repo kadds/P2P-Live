@@ -34,16 +34,21 @@ class execute_thread_dispatcher_t
     std::queue<std::tuple<execute_context_t *, std::function<void()>>> co_wait_for_resume;
     std::unordered_set<execute_context_t *> cancel_contexts;
     lock::spinlock_t lock;
+    /// lock var cancel_contexts
     lock::spinlock_t cancel_lock;
 
   public:
-    /// Not thread-safe and must be called by the event loop to execute the execute context in the queue.
-    ///\note this function is called automatically in event loop.
+    ///\note Must be called by the event loop to execute the execute context in the queue.
+    ///\note This function is called automatically in event loop.
+    ///\note Not thread-safe
     void dispatch();
 
-    /// Thread-safe functions. Cancel an execute context
+    /// Cancel an execute context
+    /// Thread-safe
     void cancel(execute_context_t *econtext);
-    /// Thread-safe functions. Add an execute context to the queue and set the wakeup function to execute
+
+    /// Add an execute context to the queue and set the wakeup function to execute
+    /// Thread-safe
     void add(execute_context_t *econtext, std::function<void()> func);
 };
 } // namespace net

@@ -204,6 +204,8 @@ class tracker_node_client_t
     std::queue<std::tuple<int, request_strategy>> node_queue;
     socket_addr_t remote_server_address;
     event_context_t *context;
+
+    /// tracker key is required when sid is 0
     std::string key;
 
   private:

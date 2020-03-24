@@ -83,6 +83,7 @@ class rudp_t
 
     bool removeable(socket_addr_t addr, int channel);
 
+    /// is current connection removeable
     bool removeable(rudp_connection_t conn);
 
     rudp_t &on_unknown_packet(unknown_handler_t handler);
@@ -92,6 +93,7 @@ class rudp_t
     co::async_result_t<io_result> awrite(co::paramter_t &param, rudp_connection_t conn, socket_buffer_t &buffer);
     co::async_result_t<io_result> aread(co::paramter_t &param, rudp_connection_t conn, socket_buffer_t &buffer);
 
+    /// call func on connection context
     void run_at(rudp_connection_t conn, std::function<void()> func);
 
     socket_t *get_socket() const;
