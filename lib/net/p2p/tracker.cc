@@ -420,24 +420,24 @@ void tracker_server_t::udp_main(rudp_connection_t conn)
 
     /// NOTE: this port may be a NAT port
     request.from_udp_port = conn.address.get_port();
-
-    node_info.conn.get_socket()->start_with([tcpconn, request, this, node_info]() {
-        if (normal_peer_connect_handler)
-        {
-            peer_node_t node;
-            node.ip = request.target_ip;
-            node.port = request.target_port;
-            node.udp_port = 0;
-            normal_peer_connect_handler(*this, node);
-        }
-        tcp::package_head_t head;
-        head.version = 4;
-        head.v4.msg_type = tracker_packet::peer_request;
-        socket_buffer_t buffer = socket_buffer_t::from_struct(request);
-        buffer.expect().origin_length();
-        endian::cast_inplace(request, buffer);
-        co::await(tcp::conn_awrite_packet, tcpconn, head, buffer);
-    });
+    if (node_info.conn.get_socket()->is_connection_alive())
+        node_info.conn.get_socket()->start_with([tcpconn, request, this, node_info]() {
+            if (normal_peer_connect_handler)
+            {
+                peer_node_t node;
+                node.ip = request.target_ip;
+                node.port = request.target_port;
+                node.udp_port = 0;
+                normal_peer_connect_handler(*this, node);
+            }
+            tcp::package_head_t head;
+            head.version = 4;
+            head.v4.msg_type = tracker_packet::peer_request;
+            socket_buffer_t buffer = socket_buffer_t::from_struct(request);
+            buffer.expect().origin_length();
+            endian::cast_inplace(request, buffer);
+            co::await(tcp::conn_awrite_packet, tcpconn, head, buffer);
+        });
 }
 
 tracker_server_t::~tracker_server_t() { close(); }
