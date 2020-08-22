@@ -70,7 +70,7 @@ class rw_lock_t
             {
             }
 
-            old = flag & ((1ul << 63) - 1);
+            old = flag & ((1ull << 63) - 1);
         } while (!flag.compare_exchange_strong(old, old + 1, std::memory_order_acquire));
     }
     /// read unlock
@@ -79,7 +79,7 @@ class rw_lock_t
         unsigned long long old;
         do
         {
-            old = flag & ((1ul << 63) - 1);
+            old = flag & ((1ull << 63) - 1);
         } while (!flag.compare_exchange_strong(old, old - 1, std::memory_order_acquire));
     }
     /// write lock

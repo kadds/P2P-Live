@@ -1,7 +1,6 @@
 #include "net/timer.hpp"
 #include <chrono>
 #include <limits>
-#include <sys/time.h>
 
 namespace net
 {
@@ -86,18 +85,23 @@ microsecond_t time_manager_t::next_tick_timepoint()
     return 0xFFFFFFFFFFFFFFFFLLU;
 }
 
-microsecond_t get_current_time()
-{
-    struct timeval timeval;
-    gettimeofday(&timeval, nullptr);
-    return timeval.tv_usec + (microsecond_t)timeval.tv_sec * 1000000;
-}
-
 microsecond_t get_timestamp()
 {
     return std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now())
         .time_since_epoch()
         .count();
+}
+
+microsecond_t get_current_time()
+{
+#ifndef OS_WINDOWS
+    struct timeval timeval;
+    gettimeofday(&timeval, nullptr);
+    return timeval.tv_usec + (microsecond_t)timeval.tv_sec * 1000000;
+#else
+    return get_timestamp();
+
+#endif
 }
 
 } // namespace net

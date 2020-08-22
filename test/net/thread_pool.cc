@@ -22,7 +22,11 @@ TEST(ThreadPoolTest, BaseTest)
 
 void calc(std::mutex &mutex, std::condition_variable &cv, std::atomic_int &c)
 {
+#ifndef OS_WINDOWS
     sleep(1);
+#else
+    _sleep(1);
+#endif
     std::unique_lock<std::mutex> lock(mutex);
     c--;
     cv.notify_one();

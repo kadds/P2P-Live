@@ -6,18 +6,20 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
-FIND_PACKAGE(Qt5Widgets REQUIRED)
-FIND_PACKAGE(Qt5Gui REQUIRED)
-FIND_PACKAGE(Qt5Core REQUIRED)
+FIND_PACKAGE(Qt5 COMPONENTS Core Gui Widgets REQUIRED)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-FIND_PACKAGE(SDL2 REQUIRED)
+if (MSVC)
+    add_executable(source-client WIN32 ${DIR_SRCS} ${WINDOW_UI})
+else()
+    add_executable(source-client ${DIR_SRCS} ${WINDOW_UI})
+endif(MSVC)
 
-add_executable(source-client ${DIR_SRCS} ${WINDOW_UI})
+find_package(GLOG NO_MODULE REQUIRED)
+
 
 target_include_directories(source-client PUBLIC ${QT_INCLUDES} )
 target_include_directories(source-client PUBLIC ${FFMPEG_INCLUDE_DIR})
-target_include_directories(source-client PUBLIC ${SDL2_INCLUDE_DIRS})
 
-target_link_libraries(source-client PUBLIC ${FFMPEG_LIBRARY} Qt5::Widgets Qt5::Core Qt5::Gui SDL2  net glog gflags Threads::Threads)
+target_link_libraries(source-client PUBLIC ${FFMPEG_LIBRARY} Qt5::Widgets Qt5::Core Qt5::Gui net glog::glog gflags Threads::Threads)
 

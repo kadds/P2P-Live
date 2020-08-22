@@ -1,9 +1,4 @@
 #include "net/socket.hpp"
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <net/if.h>
-#include <sys/ioctl.h>
-#include <sys/socket.h>
 
 namespace net
 {
@@ -13,7 +8,23 @@ socket_t::socket_t(int fd)
 {
 }
 
-socket_t::~socket_t() { close(fd); }
+socket_t::~socket_t()
+{
+#ifndef OS_WINDOWS
+    close(fd);
+#else
+    closesocket(fd);
+#endif
+}
+
+int GetErr()
+{
+#ifdef OS_WINDOWS
+    return WSAGetLastError();
+#else
+    return errno;
+#endif
+}
 
 io_result socket_t::write_async(socket_buffer_t &buffer)
 {
@@ -21,33 +32,37 @@ io_result socket_t::write_async(socket_buffer_t &buffer)
     {
         unsigned long buffer_size = buffer.get_length();
         byte *buf = buffer.get();
-        auto len = send(fd, buf, buffer_size, MSG_DONTWAIT);
+        int flag = 0;
+#ifndef OS_WINDOWS
+        flag = MSG_DONTWAIT;
+#endif
+        auto len = send(fd, (char *)buf, buffer_size, flag);
 
+        int e = GetErr();
         if (len == 0)
         {
             return io_result::cont;
         }
         else if (len < 0)
         {
-            int e = errno;
-            if (errno == EINTR)
+            if (e == EINTR)
             {
                 len = 0;
             }
-            else if (errno == EPIPE)
+            else if (e == EPIPE)
             {
                 buffer.finish_walk();
                 return io_result::closed; // EOF PIPE
             }
-            else if (errno == EAGAIN)
+            else if (e == EAGAIN)
             {
                 return io_result::cont;
             }
-            else if (errno == ECONNREFUSED)
+            else if (e == ECONNREFUSED)
             {
                 throw net_connect_exception("recv message failed!", connection_state::connection_refuse);
             }
-            else if (errno == ECONNRESET)
+            else if (e == ECONNRESET)
             {
                 throw net_connect_exception("recv message failed!", connection_state::close_by_peer);
             }
@@ -64,12 +79,17 @@ io_result socket_t::write_async(socket_buffer_t &buffer)
 
 io_result socket_t::read_async(socket_buffer_t &buffer)
 {
-    ssize_t len;
+    size_t len;
     while (buffer.get_length() > 0)
     {
         unsigned long buffer_size = buffer.get_length();
         byte *buf = buffer.get();
-        len = recv(fd, buf, buffer_size, MSG_DONTWAIT);
+        int flag = 0;
+#ifndef OS_WINDOWS
+        flag = MSG_DONTWAIT;
+#endif
+        len = recv(fd, (char *)buf, buffer_size, flag);
+
         if (len == 0) // EOF
         {
             buffer.finish_walk();
@@ -77,20 +97,21 @@ io_result socket_t::read_async(socket_buffer_t &buffer)
         }
         else if (len < 0)
         {
-            if (errno == EINTR)
+            int e = GetErr();
+            if (e == EINTR)
             {
                 len = 0;
             }
-            else if (errno == EAGAIN)
+            else if (e == EAGAIN)
             {
                 // can't read any data
                 return io_result::cont;
             }
-            else if (errno == ECONNREFUSED)
+            else if (e == ECONNREFUSED)
             {
                 throw net_connect_exception("recv message failed!", connection_state::connection_refuse);
             }
-            else if (errno == ECONNRESET)
+            else if (e == ECONNRESET)
             {
                 throw net_connect_exception("recv message failed!", connection_state::close_by_peer);
             }
@@ -167,22 +188,28 @@ co::async_result_t<io_result> socket_t::aread(co::paramter_t &param, socket_buff
 io_result socket_t::write_pack(socket_buffer_t &buffer, socket_addr_t target)
 {
     auto addr = target.get_raw_addr();
-    auto len = sendto(fd, buffer.get(), buffer.get_length(), MSG_DONTWAIT, (sockaddr *)&addr, (socklen_t)sizeof(addr));
+    int flag = 0;
+#ifndef OS_WINDOWS
+    flag = MSG_DONTWAIT;
+#endif
+    auto len = sendto(fd, (char *)buffer.get(), buffer.get_length(), flag, (sockaddr *)&addr, (socklen_t)sizeof(addr));
     if (len == 0)
     {
         return io_result::closed;
     }
     else if (len == -1)
     {
-        if (errno == EAGAIN)
+        int e = GetErr();
+
+        if (e == EAGAIN)
         {
             return io_result::cont;
         }
-        else if (errno == EACCES)
+        else if (e == EACCES)
         {
             throw net_io_exception("error send to " + target.to_string() + ". permission denied.");
         }
-        else if (errno == EPIPE)
+        else if (e == EPIPE)
         {
             return io_result::closed;
         }
@@ -196,19 +223,24 @@ io_result socket_t::write_pack(socket_buffer_t &buffer, socket_addr_t target)
 io_result socket_t::read_pack(socket_buffer_t &buffer, socket_addr_t &target)
 {
     auto addr = target.get_raw_addr();
+    int flag = 0;
+#ifndef OS_WINDOWS
+    flag = MSG_DONTWAIT;
+#endif
     socklen_t slen = sizeof(addr);
-    auto len = recvfrom(fd, buffer.get(), buffer.get_length(), MSG_DONTWAIT, (sockaddr *)&addr, &slen);
+    auto len = recvfrom(fd, (char *)buffer.get(), buffer.get_length(), flag, (sockaddr *)&addr, &slen);
     if (len < 0)
     {
-        if (errno == EINTR)
+        int e = GetErr();
+        if (e == EINTR)
         {
             len = 0;
         }
-        if (errno == EAGAIN)
+        if (e == EAGAIN)
         {
             return io_result::cont;
         }
-        else if (errno == EPIPE)
+        else if (e == EPIPE)
         {
             return io_result::closed;
         }
@@ -332,9 +364,16 @@ socket_t *new_tcp_socket()
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0)
         throw net_connect_exception("failed to start socket.", connection_state::no_resource);
+#ifndef OS_WINDOWS
     int flags = fcntl(fd, F_GETFL, 0);
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
+#else
+    uint64_t flags = 1;
+    if (ioctlsocket(fd, FIONBIO, (u_long *)&flags) == SOCKET_ERROR)
+    {
+        throw net_connect_exception("fail to set socket opt", connection_state::no_resource);
+    }
+#endif
     auto socket = new socket_t(fd);
     return socket;
 }
@@ -344,9 +383,16 @@ socket_t *new_udp_socket()
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0)
         throw net_connect_exception("failed to start socket.", connection_state::no_resource);
+#ifndef OS_WINDOWS
     int flags = fcntl(fd, F_GETFL, 0);
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
+#else
+    uint64_t flags = 1;
+    if (ioctlsocket(fd, FIONBIO, (u_long *)&flags) == SOCKET_ERROR)
+    {
+        throw net_connect_exception("fail to set socket opt", connection_state::no_resource);
+    }
+#endif
     auto socket = new socket_t(fd);
     return socket;
 }
@@ -360,9 +406,13 @@ socket_t *reuse_addr_socket(socket_t *socket, bool reuse)
 
 socket_t *reuse_port_socket(socket_t *socket, bool reuse)
 {
+#ifndef OS_WINDOWS
     int opt = reuse;
     setsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_REUSEPORT, (char *)&opt, sizeof(opt));
     return socket;
+#else
+    return reuse_addr_socket(socket, reuse);
+#endif
 }
 
 co::async_result_t<io_result> connect_to(co::paramter_t &param, socket_t *socket, socket_addr_t socket_to_addr)
@@ -382,12 +432,13 @@ co::async_result_t<io_result> connect_to(co::paramter_t &param, socket_t *socket
         socket->remove_event(event_type::readable | event_type::writable);
         return co::async_result_t<io_result>(io_result::ok);
     }
-    if (errno == EINPROGRESS)
+    int e = GetErr();
+    if (e == EINPROGRESS)
     {
         socket->add_event(event_type::readable | event_type::writable);
         return co::async_result_t<io_result>();
     }
-    else if (errno == EISCONN)
+    else if (e == EISCONN)
     {
         socket->remove_event(event_type::readable | event_type::writable);
         return co::async_result_t<io_result>(io_result::ok);
@@ -395,7 +446,6 @@ co::async_result_t<io_result> connect_to(co::paramter_t &param, socket_t *socket
     socket->remove_event(event_type::readable | event_type::writable);
     socklen_t len2 = sizeof(sockaddr_in);
     sockaddr_in addr2;
-    int er = errno;
     if (getpeername(socket->get_raw_handle(), (sockaddr *)&addr2, &len2) < 0)
     {
         return co::async_result_t<io_result>(io_result::failed);
@@ -420,12 +470,13 @@ co::async_result_t<io_result> connect_udp(co::paramter_t &param, socket_t *socke
         socket->remove_event(event_type::readable | event_type::writable);
         return co::async_result_t<io_result>(io_result::ok);
     }
-    if (errno == EINPROGRESS)
+    int e = GetErr();
+    if (e == EINPROGRESS)
     {
         socket->add_event(event_type::readable | event_type::writable);
         return co::async_result_t<io_result>();
     }
-    else if (errno == EISCONN)
+    else if (e == EISCONN)
     {
         socket->remove_event(event_type::readable | event_type::writable);
         return co::async_result_t<io_result>(io_result::ok);
@@ -433,7 +484,6 @@ co::async_result_t<io_result> connect_udp(co::paramter_t &param, socket_t *socke
     socket->remove_event(event_type::readable | event_type::writable);
     socklen_t len2 = sizeof(sockaddr_in);
     sockaddr_in addr2;
-    int er = errno;
     if (getpeername(socket->get_raw_handle(), (sockaddr *)&addr2, &len2) < 0)
     {
         return co::async_result_t<io_result>(io_result::failed);
@@ -473,8 +523,12 @@ co::async_result_t<socket_t *> accept_from(co::paramter_t &param, socket_t *sock
     int fd = accept(socket->get_raw_handle(), 0, 0);
     if (fd < 0)
     {
-        int r = errno;
-        if (errno == EAGAIN)
+        int r = GetErr();
+        if (r == EAGAIN
+#ifdef OS_WINDOWS
+            || r == WSAEWOULDBLOCK
+#endif
+        )
         {
             // wait
             socket->add_event(event_type::readable);
@@ -487,8 +541,16 @@ co::async_result_t<socket_t *> accept_from(co::paramter_t &param, socket_t *sock
     }
     socket->remove_event(event_type::readable);
 
+#ifndef OS_WINDOWS
     int flags = fcntl(fd, F_GETFL, 0);
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+#else
+    uint64_t flags = 1;
+    if (ioctlsocket(fd, FIONBIO, (u_long *)&flags) == SOCKET_ERROR)
+    {
+        throw net_connect_exception("fail to set socket opt", connection_state::no_resource);
+    }
+#endif
     auto socket2 = new socket_t(fd);
     socket2->is_connection_closed = false;
     return socket2;
@@ -498,13 +560,13 @@ void close_socket(socket_t *socket) { delete socket; }
 
 socket_t *set_socket_send_buffer_size(socket_t *socket, int size)
 {
-    setsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
+    setsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_SNDBUF, (char *)&size, sizeof(size));
     return socket;
 }
 
 socket_t *set_socket_recv_buffer_size(socket_t *socket, int size)
 {
-    setsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+    setsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_RCVBUF, (char *)&size, sizeof(size));
     return socket;
 }
 
@@ -512,7 +574,7 @@ int get_socket_send_buffer_size(socket_t *socket)
 {
     int size;
     socklen_t len = sizeof(size);
-    getsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_SNDBUF, &size, &len);
+    getsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_SNDBUF, (char *)&size, &len);
     return size;
 }
 
@@ -520,12 +582,13 @@ int get_socket_recv_buffer_size(socket_t *socket)
 {
     int size;
     socklen_t len = sizeof(size);
-    getsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_RCVBUF, &size, &len);
+    getsockopt(socket->get_raw_handle(), SOL_SOCKET, SO_RCVBUF, (char *)&size, &len);
     return size;
 }
 
 socket_addr_t get_ip(socket_t *socket)
 {
+#ifndef OS_WINDOWS
     struct ifreq ifr;
 
     if (ioctl(socket->get_raw_handle(), SIOCGIFADDR, &ifr) < 0)
@@ -533,6 +596,9 @@ socket_addr_t get_ip(socket_t *socket)
         return {};
     }
     return socket_addr_t((u32)(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr).s_addr, 0);
+#else
+    return {};
+#endif
 }
 
 } // namespace net

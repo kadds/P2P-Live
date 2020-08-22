@@ -60,6 +60,7 @@ enum event_strategy
     epoll,
     /// TODO: Encapsulation of IOCP
     IOCP,
+    AUTO,
 };
 
 /// Demultiplexer
@@ -129,8 +130,10 @@ class event_loop_t
 
     execute_thread_dispatcher_t dispatcher;
 
+#ifndef OS_WINDOWS
     ///  only for wake up demuxer
     std::unique_ptr<event_fd_handler_t> wake_up_event_handler;
+#endif
 
   private:
     void add_socket(socket_t *socket_t);

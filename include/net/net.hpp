@@ -23,12 +23,25 @@ along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
 /// linux headers
 #include <arpa/inet.h>
 #include <cstddef>
+#include <fcntl.h>
+#include <net/if.h>
 #include <netinet/in.h>
+#include <signal.h>
+#include <sys/epoll.h>
+#include <sys/eventfd.h>
+#include <sys/ioctl.h>
+#include <sys/signal.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 #else
 /// windows headers
+#define NOMINMAX
+#include <WinSock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#pragma comment(lib, "Ws2_32.lib")
 #endif
 #include "net_exception.hpp"
 

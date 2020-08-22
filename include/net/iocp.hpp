@@ -1,9 +1,9 @@
 /**
-* \file epoll.hpp
+* \file iocp.hpp
 * \author kadds (itmyxyf@gmail.com)
-* \brief epoll demultiplexer implementation
+* \brief iocp demultiplexer implementation
 * \version 0.1
-* \date 2020-03-13
+* \date 2020-08-22
 *
 * @copyright Copyright (c) 2020.
 This file is part of P2P-Live.
@@ -20,19 +20,19 @@ along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
 */
 
 #pragma once
-#ifndef OS_WINDOWS
 #include "event.hpp"
-#include <unordered_map>
+#include "net.hpp"
+#ifdef OS_WINDOWS
 
 namespace net
 {
-class event_epoll_demultiplexer : public event_demultiplexer
+class event_iocp_demultiplexer : public event_demultiplexer
 {
-    int fd;
+    int handle;
 
   public:
-    event_epoll_demultiplexer();
-    ~event_epoll_demultiplexer();
+    event_iocp_demultiplexer();
+    ~event_iocp_demultiplexer();
     void add(handle_t handle, event_type_t type) override;
     handle_t select(event_type_t *type, microsecond_t *timeout) override;
     void remove(handle_t handle, event_type_t type) override;

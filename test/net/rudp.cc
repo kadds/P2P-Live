@@ -7,7 +7,7 @@ static std::string test_data = "12345678abcdefghe";
 
 TEST(RUDPTest, Interface)
 {
-    event_context_t ctx(event_strategy::epoll);
+    event_context_t ctx(event_strategy::AUTO);
 
     socket_addr_t addr1("127.0.0.1", 2001);
     socket_addr_t addr2("127.0.0.1", 2000);
@@ -58,7 +58,7 @@ TEST(RUDPTest, FlowControl)
 {
     constexpr u64 test_count = 50;
 
-    event_context_t ctx(event_strategy::epoll);
+    event_context_t ctx(event_strategy::AUTO);
 
     socket_addr_t addr1("127.0.0.1", 2002);
     socket_addr_t addr2("127.0.0.1", 2003);
@@ -74,7 +74,7 @@ TEST(RUDPTest, FlowControl)
 
     int count_flag = 0;
 
-    rudp1.on_new_connection([&rudp1, &ctx, &count_flag](rudp_connection_t conn) {
+    rudp1.on_new_connection([&rudp1, &ctx, &count_flag, test_count](rudp_connection_t conn) {
         socket_addr_t addr;
         socket_buffer_t buffer(1280);
         buffer.clear();
@@ -91,7 +91,7 @@ TEST(RUDPTest, FlowControl)
         }
     });
 
-    rudp2.on_new_connection([&rudp2, &ctx, &count_flag](rudp_connection_t conn) {
+    rudp2.on_new_connection([&rudp2, &ctx, &count_flag, test_count](rudp_connection_t conn) {
         socket_buffer_t buffer(1280);
         for (int i = 0; i < test_count; i++)
         {
@@ -142,7 +142,7 @@ TEST(RUDPTest, MultithreadFlowControl)
 {
     constexpr u64 test_count = 50;
 
-    event_context_t ctx(event_strategy::epoll);
+    event_context_t ctx(event_strategy::AUTO);
 
     socket_addr_t addr1("127.0.0.1", 2004);
     socket_addr_t addr2("127.0.0.1", 2005);
@@ -156,7 +156,7 @@ TEST(RUDPTest, MultithreadFlowControl)
     rudp1.add_connection(addr2, 0, make_timespan(5));
     rudp1.set_wndsize(addr2, 0, 5, 3);
 
-    rudp1.on_new_connection([&rudp1, &ctx, &count_flag](rudp_connection_t conn) {
+    rudp1.on_new_connection([&rudp1, &ctx, &count_flag, test_count](rudp_connection_t conn) {
         socket_addr_t addr;
         socket_buffer_t buffer(1280);
         buffer.clear();

@@ -9,7 +9,7 @@ using namespace net;
 
 TEST(PeerTest, PeerConnection)
 {
-    event_context_t ctx(event_strategy::epoll);
+    event_context_t ctx(event_strategy::AUTO);
 
     peer_t server(1), client(1);
 
@@ -43,7 +43,7 @@ TEST(PeerTest, PeerConnection)
 TEST(PeerTest, DataTransport)
 {
     constexpr u64 test_size_bytes = 4096;
-    event_context_t ctx(event_strategy::epoll);
+    event_context_t ctx(event_strategy::AUTO);
 
     peer_t server(1), client(1);
 
@@ -57,7 +57,7 @@ TEST(PeerTest, DataTransport)
             buffer.expect().origin_length();
             server.send_meta_data_to_peer(peer, key, 1, std::move(buffer));
         })
-        .on_fragment_pull_request([](peer_t &server, peer_info_t *peer, fragment_id_t fid, int channel) {
+        .on_fragment_pull_request([test_size_bytes](peer_t &server, peer_info_t *peer, fragment_id_t fid, int channel) {
             GTEST_ASSERT_GE(fid, 1);
             GTEST_ASSERT_LE(fid, 2);
             socket_buffer_t buffer(test_size_bytes);
@@ -105,7 +105,7 @@ TEST(PeerTest, DataTransport)
 TEST(PeerTest, TrackerPingPong)
 {
     constexpr int test_count = 50;
-    event_context_t ctx(event_strategy::epoll);
+    event_context_t ctx(event_strategy::AUTO);
 
     bool ok = false;
     std::unique_ptr<tracker_server_t[]> servers = std::make_unique<tracker_server_t[]>(test_count);
@@ -113,7 +113,7 @@ TEST(PeerTest, TrackerPingPong)
 
     for (auto i = 0; i < test_count; i++)
     {
-        addrs[i] = socket_addr_t("127.0.0.1", 2500 + i);
+        addrs[i] = socket_addr_t("127.0.0.1", 25000 + i);
         servers[i].config("");
         servers[i].bind(ctx, addrs[i], test_count, true);
     }
@@ -126,15 +126,15 @@ TEST(PeerTest, TrackerPingPong)
         }
     }
 
-    event_loop_t::current().add_timer(make_timer(net::make_timespan(3), [&ctx, &servers, &addrs]() {
+    event_loop_t::current().add_timer(make_timer(net::make_timespan(3), [&ctx, &servers, &addrs, test_count]() {
         for (auto i = 0; i < test_count; i++)
         {
             auto peer = servers[i].get_trackers();
             GTEST_ASSERT_EQ(peer.size(), test_count - 1);
             for (auto j = 0; j < peer.size(); j++)
             {
-                GTEST_ASSERT_GE(peer[j].port, 2500);
-                GTEST_ASSERT_LT(peer[j].port, 2500 + test_count);
+                GTEST_ASSERT_GE(peer[j].port, 25000);
+                GTEST_ASSERT_LT(peer[j].port, 25000 + test_count);
             }
         }
         ctx.exit_all(-1);
@@ -145,7 +145,7 @@ TEST(PeerTest, TrackerPingPong)
 TEST(PeerTest, TrackerNode)
 {
     constexpr int test_count = 25;
-    event_context_t ctx(event_strategy::epoll);
+    event_context_t ctx(event_strategy::AUTO);
 
     tracker_server_t tserver1;
     socket_addr_t taddrs1("127.0.0.1", 2555);
@@ -172,7 +172,7 @@ TEST(PeerTest, TrackerNode)
         });
     }
 
-    event_loop_t::current().add_timer(make_timer(make_timespan(1), [&tclients]() {
+    event_loop_t::current().add_timer(make_timer(make_timespan(1), [&tclients, test_count]() {
         for (int i = 0; i < test_count; i++)
         {
             tclients[i].request_update_nodes(1000, request_strategy::random);
@@ -222,7 +222,7 @@ void static peer_main(event_context_t &ctx, socket_addr_t taddr, tracker_node_cl
 
 TEST(PeerTest, NATSend)
 {
-    event_context_t context(event_strategy::epoll);
+    event_context_t context(event_strategy::AUTO);
 
     tracker_server_t tserver1;
     socket_addr_t taddrs1("127.0.0.1", 2558);

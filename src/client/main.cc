@@ -90,7 +90,6 @@ struct Audio
     AVDictionary *pAVD;
 };*/
 static void atexit_func() { google::ShutdownGoogleLogging(); }
-
 int main(int argc, char *argv[])
 {
     google::InitGoogleLogging(argv[0]);

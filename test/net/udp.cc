@@ -12,7 +12,7 @@ using namespace net;
 TEST(UPDTest, UPDPackageTest)
 {
     socket_addr_t test_addr("127.0.0.1", 2224);
-    event_context_t ctx(event_strategy::epoll);
+    event_context_t ctx(event_strategy::AUTO);
     udp::server_t server;
 
     server.bind(ctx, test_addr);

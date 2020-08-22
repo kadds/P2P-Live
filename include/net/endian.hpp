@@ -53,7 +53,13 @@ namespace net::endian
 
 ///\note GNU extension
 ///\note using c++20 std::endian when enable c++20
-constexpr inline bool little_endian() { return __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__; }
+constexpr inline bool little_endian() {
+    #ifndef __GNUC__
+        return true;
+    #else
+        return __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__; 
+    #endif
+}
 
 template <typename T> void cast_struct(T &val);
 

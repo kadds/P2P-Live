@@ -63,7 +63,7 @@ int main(int argc, char **argv)
     net::init_lib();
 
     LOG(INFO) << "create application context";
-    net::event_context_t context(net::event_strategy::epoll);
+    net::event_context_t context(net::event_strategy::AUTO);
     app_context = &context;
 
     if (FLAGS_threads == 0)

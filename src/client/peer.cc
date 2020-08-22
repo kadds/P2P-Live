@@ -39,6 +39,6 @@ void disable_share() {}
 
 void cancel_fragment(net::u64 fid, int channel) {}
 
-net::socket_buffer_t get_fragment(u64 fid, int channel) {}
+net::socket_buffer_t get_fragment(u64 fid, int channel) { return net::socket_buffer_t(); }
 
-net::socket_buffer_t get_meta(int key, int channel) {}
+net::socket_buffer_t get_meta(int key, int channel) { return net::socket_buffer_t(); }

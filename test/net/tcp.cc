@@ -12,7 +12,7 @@ static std::string test_data = "test string";
 TEST(TCPTest, StreamConnection)
 {
     socket_addr_t test_addr("127.0.0.1", 2222);
-    event_context_t ctx(event_strategy::epoll);
+    event_context_t ctx(event_strategy::AUTO);
     tcp::server_t server;
 
     server.on_client_join([](tcp::server_t &s, tcp::connection_t conn) {
@@ -57,7 +57,7 @@ struct test_package_t
 TEST(TCPTest, PacketConnection)
 {
     socket_addr_t test_addr("127.0.0.1", 2222);
-    event_context_t ctx(event_strategy::epoll);
+    event_context_t ctx(event_strategy::AUTO);
     tcp::server_t server;
 
     server.on_client_join([](tcp::server_t &s, tcp::connection_t conn) {
@@ -129,7 +129,7 @@ TEST(TCPTest, PacketConnection)
 TEST(TCPTest, TCPTimeout)
 {
     socket_addr_t test_addr("8.8.8.8", 2222);
-    event_context_t ctx(event_strategy::epoll);
+    event_context_t ctx(event_strategy::AUTO);
 
     tcp::client_t client;
     client.on_server_error([&ctx](tcp::client_t &c, socket_t *socket, socket_addr_t addr, connection_state state) {
@@ -171,7 +171,7 @@ static void client_main(tcp::client_t &client, event_context_t *context, net::so
 TEST(TCPTest, MultiThreadTest)
 {
     socket_addr_t test_addr("127.0.0.1", 2129);
-    event_context_t ctx(event_strategy::epoll);
+    event_context_t ctx(event_strategy::AUTO);
     tcp::server_t server;
 
     server.on_client_join([](tcp::server_t &s, tcp::connection_t conn) {

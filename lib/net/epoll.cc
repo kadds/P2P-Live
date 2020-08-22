@@ -1,7 +1,7 @@
 #include "net/epoll.hpp"
 #include "net/net_exception.hpp"
 #include <cstring>
-#include <sys/epoll.h>
+#ifndef OS_WINDOWS
 namespace net
 {
 event_epoll_demultiplexer::event_epoll_demultiplexer()
@@ -87,3 +87,5 @@ void event_epoll_demultiplexer::remove(handle_t handle, event_type_t type)
 }
 
 } // namespace net
+
+#endif

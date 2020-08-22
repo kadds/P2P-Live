@@ -1,10 +1,23 @@
 #include "net/net.hpp"
 #include <iostream>
-#include <sys/signal.h>
 
 namespace net
 {
-
-void init_lib() { signal(SIGPIPE, SIG_IGN); }
-void uninit_lib() {}
+#ifdef OS_WINDOWS
+WSAData wsa;
+#endif
+void init_lib()
+{
+#ifndef OS_WINDOWS
+    signal(SIGPIPE, SIG_IGN);
+#else
+    WSAStartup(MAKEWORD(2, 2), &wsa);
+#endif
+}
+void uninit_lib()
+{
+#ifdef OS_WINDOWS
+    WSACleanup();
+#endif
+}
 } // namespace net

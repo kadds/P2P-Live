@@ -2,17 +2,16 @@
 #include "net/co.hpp"
 #include "net/epoll.hpp"
 #include "net/execute_context.hpp"
+#include "net/iocp.hpp"
 #include "net/select.hpp"
 #include "net/socket.hpp"
 #include <algorithm>
 #include <iostream>
-#include <signal.h>
-#include <sys/eventfd.h>
 
 namespace net
 {
 thread_local event_loop_t *thread_in_loop;
-
+#ifndef OS_WINDOWS
 class event_fd_handler_t : public event_handler_t
 {
     int fd;
@@ -32,6 +31,7 @@ class event_fd_handler_t : public event_handler_t
 
     void write() const { eventfd_write(fd, 1); }
 };
+#endif
 
 event_loop_t::event_loop_t(microsecond_t precision)
     : is_exit(false)
@@ -46,11 +46,13 @@ event_loop_t::~event_loop_t() { thread_in_loop = nullptr; }
 void event_loop_t::set_demuxer(event_demultiplexer *demuxer)
 {
     this->demuxer = demuxer;
+#ifndef OS_WINDOWS
     wake_up_event_handler = std::make_unique<event_fd_handler_t>();
     auto fd = wake_up_event_handler->get_fd();
     add_event_handler(fd, wake_up_event_handler.get());
-
     demuxer->add(fd, event_type::readable);
+#else
+#endif
 }
 
 void event_loop_t::add_event_handler(handle_t handle, event_handler_t *handler)
@@ -136,7 +138,9 @@ void event_loop_t::wake_up()
     /// no need for wake in current thread
     if (this == thread_in_loop)
         return;
+#ifndef OS_WINDOWS
     wake_up_event_handler->write();
+#endif
 }
 
 int event_loop_t::load_factor() { return event_map.size(); }
@@ -191,11 +195,27 @@ void event_context_t::do_init()
                 demuxer = new event_select_demultiplexer();
                 break;
             case event_strategy::epoll:
+#ifdef OS_WINDOWS
+                throw std::invalid_argument("not support epoll on windows");
+#else
                 demuxer = new event_epoll_demultiplexer();
+#endif
                 break;
             case event_strategy::IOCP:
+#ifndef OS_WINDOWS
+                throw std::invalid_argument("not support epoll on unix/linux");
+#else
+                demuxer = new event_iocp_demultiplexer();
+#endif
+                break;
+            case event_strategy::AUTO:
+#ifndef OS_WINDOWS
+
+#endif
+                demuxer = new event_select_demultiplexer();
+                break;
             default:
-                throw std::invalid_argument("invalid strategy");
+                throw std::invalid_argument("invalid strategy " + std::to_string(strategy));
         }
         loop->set_demuxer(demuxer);
         loops.push_back(loop);
