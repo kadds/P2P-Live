@@ -11,7 +11,7 @@ using namespace net;
 
 TEST(TimerTest, TimerShortTick)
 {
-    event_context_t ctx(event_strategy::select);
+    event_context_t ctx(event_strategy::AUTO);
     microsecond_t point = get_current_time();
     microsecond_t point2;
     // 500ms
@@ -27,7 +27,7 @@ TEST(TimerTest, TimerShortTick)
 
 TEST(TimerTest, TimerLongTick)
 {
-    event_context_t ctx(event_strategy::epoll, 500000);
+    event_context_t ctx(event_strategy::AUTO, 500000);
     // 500ms
     microsecond_t point = get_current_time();
     microsecond_t point2;
@@ -52,7 +52,7 @@ void work()
 TEST(TimerTest, TimerFullWorkLoad)
 {
     // 100ms
-    event_context_t ctx(event_strategy::epoll, 100000);
+    event_context_t ctx(event_strategy::AUTO, 100000);
 
     microsecond_t point = get_current_time();
     microsecond_t point2;
@@ -71,7 +71,7 @@ TEST(TimerTest, TimerFullWorkLoad)
 
 TEST(TimerTest, TimerRemove)
 {
-    event_context_t ctx(event_strategy::epoll, 100000);
+    event_context_t ctx(event_strategy::AUTO, 100000);
     microsecond_t point = get_current_time();
     microsecond_t point2;
 
@@ -90,7 +90,7 @@ TEST(TimerTest, TimerRemove)
 TEST(TimerTest, SocketTimer)
 {
     socket_addr_t test_addr("127.0.0.1", 2222);
-    event_context_t ctx(event_strategy::epoll);
+    event_context_t ctx(event_strategy::AUTO);
     tcp::server_t server;
 
     // 500ms

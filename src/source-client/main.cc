@@ -1,15 +1,3 @@
-extern "C" {
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_audio.h>
-#include <SDL2/SDL_mutex.h>
-#include <libavdevice/avdevice.h>
-#include <libavformat/avformat.h>
-#include <libavutil/avutil.h>
-#include <libavutil/imgutils.h>
-#include <libavutil/time.h>
-#include <libswresample/swresample.h>
-#include <libswscale/swscale.h>
-}
 #include "peer.hpp"
 #include <QtWidgets>
 #include <glog/logging.h>
@@ -21,8 +9,9 @@ using namespace std; ///-
 
 ////函数
 
-void atexit_func() { google::ShutdownGoogleLogging(); }
-void set_logger(char *argv[])
+static void atexit_func() { google::ShutdownGoogleLogging(); }
+
+int main(int argc, char *argv[])
 {
     google::InitGoogleLogging(argv[0]);
     google::SetLogDestination(google::GLOG_FATAL, "./source-client.fatal.log");
@@ -31,12 +20,7 @@ void set_logger(char *argv[])
     google::SetLogDestination(google::GLOG_WARNING, "./source-client.warning.log");
     google::SetStderrLogging(google::GLOG_INFO);
     atexit(atexit_func);
-}
 
-int main(int argc, char *argv[])
-{
-    set_logger(argv);
-    // test(argc, argv);//进入mainwindow进行文件测试
     net::init_lib();
     on_connection_error([](net::connection_state state) {
         LOG(INFO) << "reconnecting...";

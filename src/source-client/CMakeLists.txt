@@ -17,9 +17,13 @@ endif(MSVC)
 
 find_package(GLOG NO_MODULE REQUIRED)
 
-
 target_include_directories(source-client PUBLIC ${QT_INCLUDES} )
 target_include_directories(source-client PUBLIC ${FFMPEG_INCLUDE_DIR})
 
 target_link_libraries(source-client PUBLIC ${FFMPEG_LIBRARY} Qt5::Widgets Qt5::Core Qt5::Gui net glog::glog gflags Threads::Threads)
 
+add_custom_command(TARGET source-client POST_BUILD
+COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt5::Core> $<TARGET_FILE_DIR:source-client>
+COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt5::Gui> $<TARGET_FILE_DIR:source-client>
+COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt5::Widgets> $<TARGET_FILE_DIR:source-client>
+)

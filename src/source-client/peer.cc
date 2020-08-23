@@ -19,7 +19,7 @@ std::atomic_bool is_connect_edge_server = false;
 
 void thread_main(u64 sid, socket_addr_t ts_server_addr, microsecond_t timeout)
 {
-    event_context_t context(event_strategy::epoll);
+    event_context_t context(event_strategy::AUTO);
     app_context = &context;
     auto peer = std::make_unique<peer_t>(sid);
     auto tracker = std::make_unique<tracker_node_client_t>();

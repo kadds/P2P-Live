@@ -138,7 +138,7 @@ class peer_t
     std::vector<channel_t> channels;
 
   private:
-    void main(rudp_connection_t conn);
+    void pmain(rudp_connection_t conn);
     void heartbeat(rudp_connection_t conn);
 
     void update_fragments(std::vector<fragment_id_t> ids, u8 priority, rudp_connection_t conn);

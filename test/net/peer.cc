@@ -98,7 +98,7 @@ TEST(PeerTest, DataTransport)
     server.connect_to_peer(client_peer, socket_addr_t("127.0.0.1", client.get_socket()->local_addr().get_port()));
 
     event_loop_t::current().add_timer(make_timer(net::make_timespan(2), [&ctx]() { ctx.exit_all(-1); }));
-    ctx.run();
+    GTEST_ASSERT_EQ(ctx.run(), 0);
     GTEST_ASSERT_EQ(x, 2);
 }
 
@@ -180,8 +180,8 @@ TEST(PeerTest, TrackerNode)
         }
     }));
 
-    event_loop_t::current().add_timer(make_timer(net::make_timespan(2), [&ctx]() { ctx.exit_all(0); }));
-    ctx.run();
+    event_loop_t::current().add_timer(make_timer(net::make_timespan(2), [&ctx]() { ctx.exit_all(-1); }));
+    GTEST_ASSERT_EQ(ctx.run(), 0);
 }
 
 struct peer_hash_func_t
@@ -246,6 +246,6 @@ TEST(PeerTest, NATSend)
     event_loop_t::current().add_timer(make_timer(
         net::make_timespan(0, 500), [&client]() { client.request_update_nodes(10, request_strategy::random); }));
 
-    event_loop_t::current().add_timer(make_timer(net::make_timespan(3), [&context]() { context.exit_all(0); }));
-    context.run();
+    event_loop_t::current().add_timer(make_timer(net::make_timespan(3), [&context]() { context.exit_all(-1); }));
+    GTEST_ASSERT_EQ(context.run(), 0);
 }

@@ -54,7 +54,7 @@ io_result socket_t::write_async(socket_buffer_t &buffer)
                 buffer.finish_walk();
                 return io_result::closed; // EOF PIPE
             }
-            else if (e == EAGAIN)
+            else if (e == WOULDBLOCK)
             {
                 return io_result::cont;
             }
@@ -79,7 +79,7 @@ io_result socket_t::write_async(socket_buffer_t &buffer)
 
 io_result socket_t::read_async(socket_buffer_t &buffer)
 {
-    size_t len;
+    long long len;
     while (buffer.get_length() > 0)
     {
         unsigned long buffer_size = buffer.get_length();
@@ -102,7 +102,7 @@ io_result socket_t::read_async(socket_buffer_t &buffer)
             {
                 len = 0;
             }
-            else if (e == EAGAIN)
+            else if (e == WOULDBLOCK)
             {
                 // can't read any data
                 return io_result::cont;
@@ -201,7 +201,7 @@ io_result socket_t::write_pack(socket_buffer_t &buffer, socket_addr_t target)
     {
         int e = GetErr();
 
-        if (e == EAGAIN)
+        if (e == WOULDBLOCK)
         {
             return io_result::cont;
         }
@@ -236,7 +236,7 @@ io_result socket_t::read_pack(socket_buffer_t &buffer, socket_addr_t &target)
         {
             len = 0;
         }
-        if (e == EAGAIN)
+        if (e == WOULDBLOCK)
         {
             return io_result::cont;
         }
@@ -433,7 +433,7 @@ co::async_result_t<io_result> connect_to(co::paramter_t &param, socket_t *socket
         return co::async_result_t<io_result>(io_result::ok);
     }
     int e = GetErr();
-    if (e == EINPROGRESS)
+    if (e == EINPROGRESS || e == WOULDBLOCK)
     {
         socket->add_event(event_type::readable | event_type::writable);
         return co::async_result_t<io_result>();
@@ -524,11 +524,7 @@ co::async_result_t<socket_t *> accept_from(co::paramter_t &param, socket_t *sock
     if (fd < 0)
     {
         int r = GetErr();
-        if (r == EAGAIN
-#ifdef OS_WINDOWS
-            || r == WSAEWOULDBLOCK
-#endif
-        )
+        if (r == WOULDBLOCK)
         {
             // wait
             socket->add_event(event_type::readable);

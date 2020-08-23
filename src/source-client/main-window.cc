@@ -3,6 +3,8 @@
 #include "ui_main-window.h"
 #include <functional>
 #include <glog/logging.h>
+#include <string>
+#include <vector>
 extern "C" {
 #include <libavdevice/avdevice.h>
 #include <libavformat/avformat.h>
@@ -193,6 +195,126 @@ void ffmpeg_logger(void *avcl, int level, const char *fmt, va_list vl)
     }
 }
 
+#ifdef OS_WINDOWS
+#include <dshow.h>
+#include <windows.h>
+#pragma comment(lib, "strmiids")
+
+HRESULT EnumerateDevices(REFGUID category, IEnumMoniker **ppEnum)
+{
+    // Create the System Device Enumerator.
+    ICreateDevEnum *pDevEnum;
+    HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pDevEnum));
+
+    if (SUCCEEDED(hr))
+    {
+        // Create an enumerator for the category.
+        hr = pDevEnum->CreateClassEnumerator(category, ppEnum, 0);
+        if (hr == S_FALSE)
+        {
+            hr = VFW_E_NOT_FOUND; // The category is empty. Treat as an error.
+        }
+        pDevEnum->Release();
+    }
+    return hr;
+}
+
+struct Dev
+{
+    std::string name;
+    std::string dev_name;
+};
+
+#include <codecvt>
+#include <string>
+
+std::wstring utf8ToUtf16(const std::string &utf8Str)
+{
+    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> conv;
+    return conv.from_bytes(utf8Str);
+}
+
+std::string utf16ToUtf8(const std::wstring &utf16Str)
+{
+    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> conv;
+    return conv.to_bytes(utf16Str);
+}
+
+int FillDev(std::vector<Dev> &devs, IEnumMoniker *pEnum)
+{
+    IMoniker *pMoniker = NULL;
+    while (pEnum->Next(1, &pMoniker, NULL) == S_OK)
+    {
+        IPropertyBag *pPropBag;
+        HRESULT hr = pMoniker->BindToStorage(0, 0, IID_PPV_ARGS(&pPropBag));
+        if (FAILED(hr))
+        {
+            pMoniker->Release();
+            continue;
+        }
+        devs.emplace_back();
+        auto &dev = devs.back();
+
+        VARIANT var;
+        VariantInit(&var);
+
+        // Get description or friendly name.
+        hr = pPropBag->Read(L"Description", &var, 0);
+        if (FAILED(hr))
+        {
+            hr = pPropBag->Read(L"FriendlyName", &var, 0);
+        }
+        if (SUCCEEDED(hr))
+        {
+            dev.name = utf16ToUtf8(var.bstrVal);
+            VariantClear(&var);
+        }
+
+        hr = pPropBag->Write(L"FriendlyName", &var);
+        // WaveInID applies only to audio capture devices.
+        hr = pPropBag->Read(L"WaveInID", &var, 0);
+        if (SUCCEEDED(hr))
+        {
+            printf("WaveIn ID: %d\n", var.lVal);
+            VariantClear(&var);
+        }
+
+        hr = pPropBag->Read(L"DevicePath", &var, 0);
+        if (SUCCEEDED(hr))
+        {
+            // The device path is not intended for display.
+            dev.dev_name = utf16ToUtf8(var.bstrVal);
+            VariantClear(&var);
+        }
+
+        pPropBag->Release();
+        pMoniker->Release();
+    }
+    return 0;
+}
+
+int ListDevs(std::vector<Dev> &videos, std::vector<Dev> &audios)
+{
+    CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    IEnumMoniker *pEnum;
+    HRESULT hr;
+    hr = EnumerateDevices(CLSID_VideoInputDeviceCategory, &pEnum);
+    if (SUCCEEDED(hr))
+    {
+        FillDev(videos, pEnum);
+        pEnum->Release();
+    }
+    hr = EnumerateDevices(CLSID_AudioInputDeviceCategory, &pEnum);
+    if (SUCCEEDED(hr))
+    {
+        FillDev(audios, pEnum);
+        pEnum->Release();
+    }
+    return 0;
+}
+
+#endif
+
 void MainWindow::get_device()
 {
     av_log_set_callback(ffmpeg_logger);
@@ -204,7 +326,22 @@ void MainWindow::get_device()
     std::unordered_map<std::string, std::vector<std::string>> devs = {
         {"video4linux2", {"/dev/video0", "/dev/video1"}},
         {"alsa", {"/dev/audio0", "/dev/audio1", "hw:0", "hw:1", "hw2"}},
-        {"dshow", {"video=Integrated Camera"}}};
+        {"dshow", {"audio=Microphone", "video=Integrated Camera", "video=Integrated Webcam", "video=Camera"}}};
+
+#ifdef OS_WINDOWS
+    std::vector<Dev> videos, audios;
+    ListDevs(videos, audios);
+    for (auto &video : videos)
+    {
+        LOG(INFO) << "find video " + video.name << " dev " << video.dev_name;
+        devs["dshow"].push_back("video=" + video.name);
+    }
+    for (auto &audio : audios)
+    {
+        LOG(INFO) << "find audio " + audio.name << " dev " << audio.dev_name;
+        devs["dshow"].push_back("audio=" + audio.name);
+    }
+#endif
 
     for (auto &it : devs)
     {

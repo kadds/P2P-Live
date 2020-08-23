@@ -209,7 +209,7 @@ class tracker_node_client_t
     std::string key;
 
   private:
-    void main(tcp::connection_t conn);
+    void tmain(tcp::connection_t conn);
     void update_trackers(int count);
     void update_nodes();
 

@@ -16,7 +16,7 @@ peer_t::~peer_t() {}
 
 void peer_t::bind_udp()
 {
-    udp.on_new_connection(std::bind(&peer_t::main, this, std::placeholders::_1));
+    udp.on_new_connection(std::bind(&peer_t::pmain, this, std::placeholders::_1));
     udp.on_unknown_packet([this](socket_addr_t addr) {
         /// always accept
         if (peers.count(addr) == 0)
@@ -151,7 +151,7 @@ peer_info_t *peer_t::find_peer(socket_addr_t addr)
     return nullptr;
 }
 
-void peer_t::main(rudp_connection_t conn)
+void peer_t::pmain(rudp_connection_t conn)
 {
     /// 1472 is udp MSS
     std::unique_ptr<char[]> data = std::make_unique<char[]>(1472);

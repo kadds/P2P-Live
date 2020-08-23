@@ -41,18 +41,20 @@ handle_t event_select_demultiplexer::select(event_type_t *type, microsecond_t *t
         *timeout = 0;
         return 0;
     }
-    /// 0 1 2 is STDIN STDOUT STDERR
+#ifndef OS_WINDOWS
+    /// 0 1 2 is STDIN STDOUT STDERR in linux
     for (int i = 3; i < FD_SETSIZE; i++)
     {
-        if (FD_ISSET(i, &rs))
+        int j = i;
+        if (FD_ISSET(j, &rs))
         {
             *type = event_type::readable;
         }
-        else if (FD_ISSET(i, &ws))
+        else if (FD_ISSET(j, &ws))
         {
             *type = event_type::writable;
         }
-        else if (FD_ISSET(i, &es))
+        else if (FD_ISSET(j, &es))
         {
             *type = event_type::error;
         }
@@ -60,7 +62,32 @@ handle_t event_select_demultiplexer::select(event_type_t *type, microsecond_t *t
         {
             continue;
         }
-        return i;
+        return j;
+#else
+    for (int i = 0; i < FD_SETSIZE; i++)
+    {
+        int fd;
+        if (FD_ISSET(read_set.fd_array[i], &rs))
+        {
+            fd = read_set.fd_array[i];
+            *type = event_type::readable;
+        }
+        else if (FD_ISSET(write_set.fd_array[i], &ws))
+        {
+            fd = write_set.fd_array[i];
+            *type = event_type::writable;
+        }
+        else if (FD_ISSET(error_set.fd_array[i], &es))
+        {
+            fd = error_set.fd_array[i];
+            *type = event_type::error;
+        }
+        else
+        {
+            continue;
+        }
+        return fd;
+#endif
     }
     return 0;
 }

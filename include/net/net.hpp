@@ -35,13 +35,15 @@ along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
+#define WOULDBLOCK EAGIN
 #else
 /// windows headers
 #define NOMINMAX
 #include <WinSock2.h>
-#include <ws2tcpip.h>
 #include <windows.h>
+#include <ws2tcpip.h>
 #pragma comment(lib, "Ws2_32.lib")
+#define WOULDBLOCK WSAEWOULDBLOCK
 #endif
 #include "net_exception.hpp"
 

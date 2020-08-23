@@ -633,7 +633,7 @@ void init_long_connection(tcp::connection_t conn, u64 sid, std::string key)
         return;
 }
 
-void tracker_node_client_t::main(tcp::connection_t conn)
+void tracker_node_client_t::tmain(tcp::connection_t conn)
 {
     if (!is_peer_client)
     {
@@ -785,7 +785,7 @@ void tracker_node_client_t::connect_server(event_context_t &context, socket_addr
     client_rudp_port = 0;
 
     wait_next_package = false;
-    client.on_server_connect(std::bind(&tracker_node_client_t::main, this, std::placeholders::_2))
+    client.on_server_connect(std::bind(&tracker_node_client_t::tmain, this, std::placeholders::_2))
         .on_server_error([this](tcp::client_t &c, socket_t *so, socket_addr_t addr, connection_state state) {
             if (error_handler)
                 error_handler(*this, addr, state);
