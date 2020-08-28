@@ -31,7 +31,7 @@ handle_t event_select_demultiplexer::select(event_type_t *type, microsecond_t *t
     struct timeval t;
     t.tv_sec = *timeout / 1000000;
     t.tv_usec = *timeout % 1000000;
-    auto ret = ::select(FD_SETSIZE, &rs, &ws, &es, &t);
+    auto ret = ::select(FD_SETSIZE + 1, &rs, &ws, &es, &t);
     if (ret == -1)
     {
         return 0;

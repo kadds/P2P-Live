@@ -25,6 +25,7 @@ along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
 #include "../socket_addr.hpp"
 #include "../tcp.hpp"
 #include "msg.hpp"
+#include "msg.pb.h"
 #include <functional>
 #include <memory>
 #include <unordered_map>

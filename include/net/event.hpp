@@ -53,6 +53,7 @@ class event_context_t;
 class event_loop_t;
 class execute_context_t;
 class event_fd_handler_t;
+class event_apc_handler_t;
 
 enum event_strategy
 {
@@ -115,6 +116,8 @@ class event_loop_t
   private:
     using event_handle_map_t = std::unordered_map<handle_t, event_handler_t *>;
     friend class event_context_t;
+    friend class event_fd_handler_t;
+    friend class event_apc_handler_t;
 
     bool is_exit;
     int exit_code;
@@ -133,6 +136,9 @@ class event_loop_t
 #ifndef OS_WINDOWS
     ///  only for wake up demuxer
     std::unique_ptr<event_fd_handler_t> wake_up_event_handler;
+#else
+    std::unique_ptr<event_apc_handler_t> wake_up_event_handler;
+    HANDLE handle;
 #endif
 
   private:

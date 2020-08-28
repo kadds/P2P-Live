@@ -4,14 +4,14 @@ namespace net
 
 void thread_pool_t::wrapper()
 {
-    while (!exit)
+    while (!exit || !empty())
     {
         std::function<void()> task;
         counter++;
         {
             std::unique_lock<std::mutex> lock(mutex);
             cond.wait(lock, [this]() { return !this->empty() || exit; });
-            if (exit)
+            if (exit && empty())
                 return;
             task = std::move(tasks.front());
             tasks.pop();

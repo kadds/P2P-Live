@@ -24,6 +24,7 @@ along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
 #include "../rudp.hpp"
 #include "../tcp.hpp"
 #include "msg.hpp"
+#include "msg.pb.h"
 #include <functional>
 #include <unordered_set>
 
@@ -142,7 +143,7 @@ class tracker_server_t
     void server_main(tcp::connection_t conn);
     void client_main(tcp::connection_t conn);
     void udp_main(rudp_connection_t conn);
-    void update_tracker(socket_addr_t addr, tcp::connection_t conn, tracker_ping_pong_t &res);
+    void update_tracker(socket_addr_t addr, tcp::connection_t conn, PingPong &res);
 
   public:
     tracker_server_t(){};
@@ -201,7 +202,7 @@ class tracker_node_client_t
     bool is_peer_client;
     bool wait_next_package;
 
-    std::queue<std::tuple<int, request_strategy>> node_queue;
+    std::queue<std::tuple<int, RequestNodeStrategy>> node_queue;
     socket_addr_t remote_server_address;
     event_context_t *context;
 
@@ -227,7 +228,7 @@ class tracker_node_client_t
     ///\note the nodes can contain self
     tracker_node_client_t &on_nodes_update(nodes_update_handler_t handler);
 
-    void request_update_nodes(int max_request_count, request_strategy strategy);
+    void request_update_nodes(int max_request_count, RequestNodeStrategy strategy);
     tracker_node_client_t &on_trackers_update(trackers_update_handler_t handler);
 
     void request_connect_node(peer_node_t node, rudp_t &udp);

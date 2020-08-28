@@ -56,29 +56,41 @@ peer_info_t *peer_t::add_peer()
 
 void peer_t::send_fragments(fragment_id_t fid, socket_buffer_t buffer, rudp_connection_t conn)
 {
-    socket_buffer_t send_buffer(udp.get_mtu());
+    Package pkg;
+    auto &rsp = *pkg.mutable_fragment_rsp();
+    rsp.set_fragment_id(fid);
+    rsp.set_length(buffer.get_length());
+    rsp.set_data("");
+    auto mtu = udp.get_mtu();
+    auto base_len = mtu - pkg.ByteSizeLong() - 8;
 
-    peer_fragment_respond_t *respond = (peer_fragment_respond_t *)send_buffer.get();
-    respond->type = peer_msg_type::fragment_respond;
-    respond->fid = fid;
-    respond->frame_size = buffer.get_length();
-    /// send first fragment
-    int len = std::min(buffer.get_length(), udp.get_mtu() - sizeof(peer_fragment_respond_t));
-    send_buffer.expect().length(sizeof(peer_fragment_respond_t) + len);
-    endian::cast_inplace(*respond, send_buffer);
-    memcpy(send_buffer.get() + sizeof(peer_fragment_respond_t), buffer.get(), len);
+    auto len = std::min(buffer.get_length(), base_len);
+    rsp.set_data(buffer.get(), len);
+    auto pkg_len = pkg.ByteSizeLong();
+    if (pkg_len > mtu)
+    {
+        throw std::exception("length too large");
+    }
+    socket_buffer_t send_buffer(pkg_len);
+    send_buffer.expect().origin_length();
+    pkg.SerializeWithCachedSizesToArray(send_buffer.get());
+
     co::await(rudp_awrite, &udp, conn, send_buffer);
     buffer.walk_step(len);
-    send_buffer.expect().origin_length();
     /// send rest fragments
-    peer_fragment_rest_respond_t *rsp = (peer_fragment_rest_respond_t *)send_buffer.get();
-    rsp->type = peer_msg_type::fragment_respond_rest;
 
+    auto &rsp_rest = *pkg.mutable_fragment_rsp_rest();
     while (buffer.get_length() > 0)
     {
-        auto len = std::min((u32)buffer.get_length(), (u32)udp.get_mtu() - (u32)sizeof(peer_fragment_rest_respond_t));
-        send_buffer.expect().length(len + sizeof(peer_fragment_rest_respond_t));
-        memcpy(send_buffer.get() + sizeof(peer_fragment_rest_respond_t), buffer.get(), len);
+        len = std::min(buffer.get_length(), base_len);
+        rsp_rest.set_data(buffer.get(), len);
+        pkg_len = pkg.ByteSizeLong();
+        if (pkg_len > mtu)
+        {
+            throw std::exception("length too large");
+        }
+        send_buffer.expect().length(pkg_len);
+        pkg.SerializeWithCachedSizesToArray(send_buffer.get());
         co::await(rudp_awrite, &udp, conn, send_buffer);
         buffer.walk_step(len);
     }
@@ -86,12 +98,12 @@ void peer_t::send_fragments(fragment_id_t fid, socket_buffer_t buffer, rudp_conn
 
 void peer_t::send_init(rudp_connection_t conn)
 {
-    peer_init_request_t req;
-    req.type = peer_msg_type::init_request;
-    req.sid = sid;
-    socket_buffer_t buffer = socket_buffer_t::from_struct(req);
+    Package pkg;
+    pkg.Clear();
+    pkg.mutable_init_req()->set_sid(sid);
+    socket_buffer_t buffer(pkg.ByteSizeLong());
     buffer.expect().origin_length();
-    endian::cast_inplace(req, buffer);
+    pkg.SerializeWithCachedSizesToArray(buffer.get());
     co::await(rudp_awrite, &udp, conn, buffer);
 }
 
@@ -167,15 +179,14 @@ void peer_t::pmain(rudp_connection_t conn)
     {
         recv_buffer.expect().origin_length();
         auto ret = co::await(rudp_aread, &udp, conn, recv_buffer);
+        Package pkg;
+        Package new_pkg;
+        pkg.ParseFromArray(recv_buffer.get(), recv_buffer.get_length());
 
-        u8 type = recv_buffer.get()[0];
-        if (type == peer_msg_type::init_request)
+        if (pkg.has_init_req())
         {
-            if (recv_buffer.get_length() < sizeof(peer_init_request_t))
-                continue;
-            peer_init_request_t *request = (peer_init_request_t *)data.get();
-            endian::cast_inplace(*request, recv_buffer);
-            if ((sid != 0 && request->sid != 0) && request->sid != sid)
+            auto &init_req = pkg.init_req();
+            if ((sid != 0 && init_req.sid() != 0) && init_req.sid() != sid)
                 continue;
 
             peer->last_ping = get_timestamp();
@@ -183,93 +194,76 @@ void peer_t::pmain(rudp_connection_t conn)
 
             if (peer->has_connect)
                 continue;
-
-            peer_init_respond_t respond;
-            respond.type = peer_msg_type::init_respond;
-            respond.first_data_id = 0;
-            respond.last_data_id = 0;
-            recv_buffer.expect().length(sizeof(respond));
-            endian::save_to(respond, recv_buffer);
+            auto &rsp = *new_pkg.mutable_init_rsp();
+            rsp.set_fragment_id_beg(0);
+            rsp.set_fragment_id_end(0);
+            recv_buffer.expect().length(new_pkg.ByteSizeLong());
+            new_pkg.SerializeWithCachedSizesToArray(recv_buffer.get());
             co::await(rudp_awrite, &udp, conn, recv_buffer);
         }
-        else if (type == peer_msg_type::init_respond)
+        else if (pkg.has_init_rsp())
         {
-            if (recv_buffer.get_length() < sizeof(peer_init_respond_t))
-                continue;
-            peer_init_respond_t *respond = (peer_init_respond_t *)data.get();
-            endian::cast_inplace(*respond, recv_buffer);
-
             peer->last_ping = get_timestamp();
             peer->has_connect = true;
 
             if (connect_handler)
                 connect_handler(*this, peer);
         }
-        else if (type == peer_msg_type::heart)
+        else if (pkg.has_heart())
         {
             peer->last_ping = get_timestamp();
         }
-        else if (type == peer_msg_type::get_meta)
+        else if (pkg.has_meta_req())
         {
-            if (recv_buffer.get_length() < sizeof(peer_request_metainfo_t))
-                continue;
             peer->last_ping = get_timestamp();
-            peer_request_metainfo_t *request = (peer_request_metainfo_t *)data.get();
+            auto &meta_req = pkg.meta_req();
             if (meta_handler)
-                meta_handler(*this, peer, request->key, conn.channel);
+                meta_handler(*this, peer, meta_req.key(), conn.channel);
         }
-        else if (type == peer_msg_type::meta_respond)
+        else if (pkg.has_meta_rsp())
         {
-            if (recv_buffer.get_length() < sizeof(peer_meta_respond_t))
-                continue;
-            peer_meta_respond_t *respond = (peer_meta_respond_t *)data.get();
-            endian::cast_inplace(*respond, recv_buffer);
-            recv_buffer.walk_step(sizeof(peer_meta_respond_t));
+            auto &meta_rsp = pkg.meta_rsp();
             if (meta_recv_handler)
-                meta_recv_handler(*this, peer, recv_buffer, respond->key, conn.channel);
+            {
+                socket_buffer_t buf = socket_buffer_t::from_string(meta_rsp.value());
+                buf.expect().origin_length();
+                meta_recv_handler(*this, peer, buf, meta_rsp.key(), conn.channel);
+            }
         }
-        else if (type == peer_msg_type::fragment_request)
+        else if (pkg.has_fragment_req())
         {
-            if (recv_buffer.get_length() < sizeof(peer_fragment_request_t))
-                continue;
-            peer_fragment_request_t *request = (peer_fragment_request_t *)data.get();
-            if (request->count * sizeof(fragment_id_t) + sizeof(peer_fragment_request_t) > recv_buffer.get_length())
-                continue;
+            auto &fragment_req = pkg.fragment_req();
 
             if (meta_handler)
             {
-                recv_buffer.walk_step(sizeof(peer_fragment_request_t));
                 if (fragment_handler)
-                    for (auto i = 0; i < request->count; i++)
+                {
+                    for (auto i = 0; i < fragment_req.fragment_ids_size(); i++)
                     {
-                        endian::cast_inplace(request->ids[i], recv_buffer);
-                        fragment_handler(*this, peer, request->ids[i], conn.channel);
+                        fragment_handler(*this, peer, fragment_req.fragment_ids(i), conn.channel);
                         recv_buffer.walk_step(sizeof(fragment_id_t));
                     }
+                }
             }
         }
-        else if (type == peer_msg_type::fragment_respond)
+        else if (pkg.has_fragment_rsp())
         {
             auto &chq = peer->channel[conn.channel];
             if (chq.fragment_recv_buffer_cache.get_base_ptr() == nullptr)
             {
                 // new fragment
-                if (recv_buffer.get_length() < sizeof(peer_fragment_respond_t))
-                    continue;
-                peer_fragment_respond_t *frag_respond = (peer_fragment_respond_t *)data.get();
-                endian::cast_inplace(*frag_respond, recv_buffer);
-                if (frag_respond->frame_size > 0x1000000) /// XXX: 16MB too large
+                auto &fragment_rsp = pkg.fragment_rsp();
+                if (fragment_rsp.length() > 0x1000000) /// XXX: 16MB too large
                 {
                     // close peer
                 }
-                chq.fragment_recv_id = frag_respond->fid;
+                chq.fragment_recv_id = fragment_rsp.fragment_id();
 
-                chq.fragment_recv_buffer_cache = socket_buffer_t(frag_respond->frame_size);
+                chq.fragment_recv_buffer_cache = socket_buffer_t(fragment_rsp.length());
                 chq.fragment_recv_buffer_cache.expect().origin_length();
-                u32 len = std::min(frag_respond->frame_size,
-                                   (u32)recv_buffer.get_length() - (u32)sizeof(peer_fragment_respond_t));
+                u64 len = std::min(fragment_rsp.length(), fragment_rsp.data().size());
 
-                memcpy(chq.fragment_recv_buffer_cache.get(), recv_buffer.get() + sizeof(peer_fragment_respond_t), len);
+                memcpy(chq.fragment_recv_buffer_cache.get(), fragment_rsp.data().data(), len);
                 chq.fragment_recv_buffer_cache.walk_step(len);
             }
             if (chq.fragment_recv_buffer_cache.get_length() == 0)
@@ -281,7 +275,7 @@ void peer_t::pmain(rudp_connection_t conn)
                 chq.fragment_recv_buffer_cache = {};
             }
         }
-        else if (type == peer_msg_type::fragment_respond_rest)
+        else if (pkg.has_fragment_rsp_rest())
         {
             auto &chq = peer->channel[channel];
             if (chq.fragment_recv_buffer_cache.get_base_ptr() == nullptr)
@@ -289,15 +283,15 @@ void peer_t::pmain(rudp_connection_t conn)
             }
             else
             {
-                if (recv_buffer.get_length() < sizeof(peer_fragment_rest_respond_t))
+                auto &fragment_rsp = pkg.fragment_rsp_rest();
+                if (fragment_rsp.is_rst())
+                {
+                    chq.fragment_recv_buffer_cache = {};
                     continue;
-                peer_fragment_rest_respond_t *frag_respond = (peer_fragment_rest_respond_t *)data.get();
-                endian::cast_inplace(*frag_respond, recv_buffer);
+                }
 
-                u32 len = std::min((u32)chq.fragment_recv_buffer_cache.get_length(),
-                                   (u32)recv_buffer.get_length() - (u32)sizeof(peer_fragment_rest_respond_t));
-                memcpy(chq.fragment_recv_buffer_cache.get(), recv_buffer.get() + sizeof(peer_fragment_rest_respond_t),
-                       len);
+                auto len = std::min(chq.fragment_recv_buffer_cache.get_length(), fragment_rsp.data().size());
+                memcpy(chq.fragment_recv_buffer_cache.get(), fragment_rsp.data().data(), len);
                 chq.fragment_recv_buffer_cache.walk_step(len);
             }
             if (chq.fragment_recv_buffer_cache.get_length() == 0)
@@ -314,11 +308,13 @@ void peer_t::pmain(rudp_connection_t conn)
 
 void peer_t::heartbeat(rudp_connection_t conn)
 {
-    u8 type = peer_msg_type::heart;
-    socket_buffer_t buffer(&type, sizeof(type));
-    buffer.expect().origin_length();
-    endian::cast_inplace(type, buffer);
-    co::await(rudp_awrite, &udp, conn, buffer);
+    Package pkg;
+    auto &heart = *pkg.mutable_heart();
+
+    socket_buffer_t send_buffer(pkg.ByteSizeLong());
+    send_buffer.expect().origin_length();
+    pkg.SerializeWithCachedSizesToArray(send_buffer.get());
+    co::await(rudp_awrite, &udp, conn, send_buffer);
 }
 
 void peer_t::connect_to_peer(peer_info_t *peer, socket_addr_t remote_peer_udp_addr)
@@ -394,57 +390,42 @@ peer_t &peer_t::on_fragment_recv(peer_data_recv_t handler)
 
 void peer_t::update_fragments(std::vector<fragment_id_t> ids, u8 priority, rudp_connection_t conn)
 {
-    std::unique_ptr<char[]> data =
-        std::make_unique<char[]>(sizeof(peer_fragment_request_t) + ids.size() * sizeof(fragment_id_t));
-    socket_buffer_t send_buffer((byte *)data.get(),
-                                sizeof(peer_fragment_request_t) + ids.size() * sizeof(fragment_id_t));
-
-    peer_fragment_request_t *request = (peer_fragment_request_t *)data.get();
-    request->count = ids.size();
-    request->priority = priority;
-    request->type = peer_msg_type::fragment_request;
-    send_buffer.expect().origin_length();
-    endian::cast_inplace(*request, send_buffer);
-    send_buffer.walk_step(sizeof(peer_fragment_request_t));
-    int i = 0;
+    Package pkg;
+    auto &req = *pkg.mutable_fragment_req();
+    req.set_priority(priority);
     for (auto id : ids)
     {
-        request->ids[i] = id;
-        endian::cast_inplace(request->ids[i++], send_buffer);
-        send_buffer.walk_step(sizeof(fragment_id_t));
+        req.add_fragment_ids(id);
     }
 
+    socket_buffer_t send_buffer(pkg.ByteSizeLong());
     send_buffer.expect().origin_length();
-
+    pkg.SerializeWithCachedSizesToArray(send_buffer.get());
     co::await(rudp_awrite, &udp, conn, send_buffer);
 }
 
 void peer_t::update_metainfo(u64 key, rudp_connection_t conn)
 {
-    peer_request_metainfo_t request;
+    Package pkg;
+    auto &meta_req = *pkg.mutable_meta_req();
+    meta_req.set_key(key);
 
-    socket_buffer_t send_buffer = socket_buffer_t::from_struct(request);
-
-    request.key = key;
-    request.type = peer_msg_type::get_meta;
-
+    socket_buffer_t send_buffer(pkg.ByteSizeLong());
     send_buffer.expect().origin_length();
-    endian::cast_inplace(request, send_buffer);
-
+    pkg.SerializeWithCachedSizesToArray(send_buffer.get());
     co::await(rudp_awrite, &udp, conn, send_buffer);
 }
 
 void peer_t::send_metainfo(u64 key, socket_buffer_t buffer, rudp_connection_t conn)
 {
-    socket_buffer_t send_buffer(buffer.get_length() + sizeof(peer_meta_respond_t));
-    peer_meta_respond_t *respond = (peer_meta_respond_t *)send_buffer.get();
-    send_buffer.expect().origin_length();
-    respond->type = peer_msg_type::meta_respond;
-    respond->key = key;
-    endian::cast_inplace(*respond, send_buffer);
-    send_buffer.expect().origin_length();
-    memcpy(send_buffer.get() + sizeof(peer_meta_respond_t), buffer.get(), buffer.get_length());
+    Package pkg;
+    auto &meta_rsp = *pkg.mutable_meta_rsp();
+    meta_rsp.set_key(key);
+    meta_rsp.set_value(buffer.to_string());
 
+    socket_buffer_t send_buffer(pkg.ByteSizeLong());
+    send_buffer.expect().origin_length();
+    pkg.SerializeWithCachedSizesToArray(send_buffer.get());
     co::await(rudp_awrite, &udp, conn, send_buffer);
 }
 

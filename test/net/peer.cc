@@ -35,7 +35,7 @@ TEST(PeerTest, PeerConnection)
     client.connect_to_peer(server_peer, socket_addr_t("127.0.0.1", server.get_socket()->local_addr().get_port()));
     server.connect_to_peer(client_peer, socket_addr_t("127.0.0.1", client.get_socket()->local_addr().get_port()));
 
-    event_loop_t::current().add_timer(make_timer(net::make_timespan(1), [&ctx]() { ctx.exit_all(-1); }));
+    event_loop_t::current().add_timer(make_timer(net::make_timespan(2), [&ctx]() { ctx.exit_all(-1); }));
     ctx.run();
     GTEST_ASSERT_EQ(ok, 2);
 }
@@ -104,7 +104,7 @@ TEST(PeerTest, DataTransport)
 
 TEST(PeerTest, TrackerPingPong)
 {
-    constexpr int test_count = 50;
+    constexpr int test_count = 20;
     event_context_t ctx(event_strategy::AUTO);
 
     bool ok = false;
@@ -115,18 +115,18 @@ TEST(PeerTest, TrackerPingPong)
     {
         addrs[i] = socket_addr_t("127.0.0.1", 25000 + i);
         servers[i].config("");
-        servers[i].bind(ctx, addrs[i], test_count, true);
+        servers[i].bind(ctx, addrs[i], 200, true);
     }
 
     for (auto i = 0; i < test_count; i++)
     {
         for (auto j = i + 1; j < test_count; j++)
         {
-            servers[i].link_other_tracker_server(ctx, addrs[j], make_timespan_full());
+            servers[i].link_other_tracker_server(ctx, addrs[j], make_timespan(1));
         }
     }
 
-    event_loop_t::current().add_timer(make_timer(net::make_timespan(3), [&ctx, &servers, &addrs, test_count]() {
+    event_loop_t::current().add_timer(make_timer(net::make_timespan(4), [&ctx, &servers, &addrs, test_count]() {
         for (auto i = 0; i < test_count; i++)
         {
             auto peer = servers[i].get_trackers();
@@ -137,9 +137,10 @@ TEST(PeerTest, TrackerPingPong)
                 GTEST_ASSERT_LT(peer[j].port, 25000 + test_count);
             }
         }
-        ctx.exit_all(-1);
+        ctx.exit_all(0);
     }));
-    ctx.run();
+    event_loop_t::current().add_timer(make_timer(net::make_timespan(5), [&ctx]() { ctx.exit_all(-1); }));
+    GTEST_ASSERT_EQ(ctx.run(), 0);
 }
 
 TEST(PeerTest, TrackerNode)
@@ -158,6 +159,7 @@ TEST(PeerTest, TrackerNode)
     tserver1.link_other_tracker_server(ctx, taddrs2, make_timespan(1));
 
     std::unique_ptr<tracker_node_client_t[]> tclients = std::make_unique<tracker_node_client_t[]>(test_count);
+    int update_cnt = 0;
     for (int i = 0; i < test_count; i++)
     {
         tclients[i].config(true, 1, "");
@@ -165,23 +167,26 @@ TEST(PeerTest, TrackerNode)
         tclients[i].on_nodes_update([test_count](tracker_node_client_t &client, peer_node_t *nodes, u64 count) {
             GTEST_ASSERT_EQ(count, test_count);
         });
-        tclients[i].on_trackers_update([taddrs2](tracker_node_client_t &, tracker_node_t *nodes, u64 count) {
-            /// always get tserver2 address
-            GTEST_ASSERT_EQ(count, 1);
-            GTEST_ASSERT_EQ(nodes[0].port, taddrs2.get_port());
-        });
+        tclients[i].on_trackers_update(
+            [taddrs2, &update_cnt](tracker_node_client_t &, tracker_node_t *nodes, u64 count) {
+                /// always get tserver2 address
+                GTEST_ASSERT_EQ(count, 1);
+                GTEST_ASSERT_EQ(nodes[0].port, taddrs2.get_port());
+                update_cnt++;
+            });
     }
 
     event_loop_t::current().add_timer(make_timer(make_timespan(1), [&tclients, test_count]() {
         for (int i = 0; i < test_count; i++)
         {
-            tclients[i].request_update_nodes(1000, request_strategy::random);
+            tclients[i].request_update_nodes(1000, RequestNodeStrategy::random);
             tclients[i].request_update_trackers();
         }
     }));
 
-    event_loop_t::current().add_timer(make_timer(net::make_timespan(2), [&ctx]() { ctx.exit_all(-1); }));
+    event_loop_t::current().add_timer(make_timer(net::make_timespan(2), [&ctx]() { ctx.exit_all(0); }));
     GTEST_ASSERT_EQ(ctx.run(), 0);
+    GTEST_ASSERT_EQ(update_cnt, test_count);
 }
 
 struct peer_hash_func_t
@@ -204,8 +209,8 @@ void static peer_main(event_context_t &ctx, socket_addr_t taddr, tracker_node_cl
             }
         })
         .on_node_request_connect([&peer, &remote_peers](tracker_node_client_t &client, peer_node_t node) {
-            // 如果A可以直连这里会连接成功，后面的request会被对方忽略
             socket_addr_t addr(node.ip, node.udp_port);
+            // has connected ?
             if (remote_peers[addr] != nullptr)
                 return;
 
@@ -244,7 +249,7 @@ TEST(PeerTest, NATSend)
     peer_main(context, taddrs1, client2, peer2, flags, remote_peers2);
 
     event_loop_t::current().add_timer(make_timer(
-        net::make_timespan(0, 500), [&client]() { client.request_update_nodes(10, request_strategy::random); }));
+        net::make_timespan(0, 500), [&client]() { client.request_update_nodes(10, RequestNodeStrategy::random); }));
 
     event_loop_t::current().add_timer(make_timer(net::make_timespan(3), [&context]() { context.exit_all(-1); }));
     GTEST_ASSERT_EQ(context.run(), 0);

@@ -11,6 +11,7 @@
 namespace net
 {
 thread_local event_loop_t *thread_in_loop;
+
 #ifndef OS_WINDOWS
 class event_fd_handler_t : public event_handler_t
 {
@@ -29,7 +30,19 @@ class event_fd_handler_t : public event_handler_t
         eventfd_read(fd, &vl);
     }
 
-    void write() const { eventfd_write(fd, 1); }
+    void write(event_loop_t &loop) const { eventfd_write(fd, 1); }
+};
+#else
+VOID WINAPI APCFunc(ULONG_PTR dwParam) {}
+
+class event_apc_handler_t : public event_handler_t
+{
+  public:
+    event_apc_handler_t() {}
+    ~event_apc_handler_t() {}
+    void on_event(event_context_t &, event_type_t type) override {}
+
+    void write(event_loop_t &loop) const { QueueUserAPC(APCFunc, loop.handle, 0); }
 };
 #endif
 
@@ -39,6 +52,9 @@ event_loop_t::event_loop_t(microsecond_t precision)
 {
     time_manager = create_time_manager(precision);
     thread_in_loop = this;
+#ifdef OS_WINDOWS
+    handle = GetCurrentThread();
+#endif
 }
 
 event_loop_t::~event_loop_t() { thread_in_loop = nullptr; }
@@ -52,6 +68,7 @@ void event_loop_t::set_demuxer(event_demultiplexer *demuxer)
     add_event_handler(fd, wake_up_event_handler.get());
     demuxer->add(fd, event_type::readable);
 #else
+    wake_up_event_handler = std::make_unique<event_apc_handler_t>();
 #endif
 }
 
@@ -138,9 +155,7 @@ void event_loop_t::wake_up()
     /// no need for wake in current thread
     if (this == thread_in_loop)
         return;
-#ifndef OS_WINDOWS
-    wake_up_event_handler->write();
-#endif
+    wake_up_event_handler->write(*this);
 }
 
 int event_loop_t::load_factor() { return event_map.size(); }

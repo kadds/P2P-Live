@@ -47,6 +47,66 @@ TEST(TCPTest, StreamConnection)
     ctx.run();
 }
 
+TEST(TCPTest, LargeStreamConnection)
+{
+    socket_addr_t test_addr("127.0.0.1", 2203);
+    event_context_t ctx(event_strategy::AUTO);
+    tcp::server_t server;
+
+    server.on_client_join([](tcp::server_t &s, tcp::connection_t conn) {
+        socket_buffer_t buffer(test_data.size());
+        buffer.expect().origin_length();
+        GTEST_ASSERT_EQ(co::await(tcp::conn_aread, conn, buffer), io_result::ok);
+
+        GTEST_ASSERT_EQ(buffer.to_string(), test_data);
+        buffer.expect().origin_length();
+        GTEST_ASSERT_EQ(co::await(tcp::conn_awrite, conn, buffer), io_result::ok);
+    });
+    server.listen(ctx, test_addr, 100, true);
+
+    const int cnt = 50;
+    std::vector<tcp::client_t> clients;
+    clients.resize(cnt);
+    int ok = 0;
+
+    for (int i = 0; i < cnt; i++)
+    {
+        auto &client = clients[i];
+        client
+            .on_server_connect([&ok, &cnt, &ctx](tcp::client_t &c, tcp::connection_t conn) {
+                socket_buffer_t buffer = socket_buffer_t::from_string(test_data);
+                buffer.expect().origin_length();
+                GTEST_ASSERT_EQ(co::await(tcp::conn_awrite, conn, buffer), io_result::ok);
+                buffer.expect().origin_length();
+                GTEST_ASSERT_EQ(co::await(tcp::conn_aread, conn, buffer), io_result::ok);
+                GTEST_ASSERT_EQ(buffer.to_string(), test_data);
+                ok++;
+                if (ok >= cnt)
+                {
+                    ctx.exit_all(0);
+                }
+            })
+            .on_server_disconnect([&ctx, &ok, &cnt](tcp::client_t &c, tcp::connection_t conn) {
+                if (ok >= cnt)
+                {
+                    ctx.exit_all(0);
+                }
+                else
+                {
+                }
+            });
+
+        client.connect(ctx, test_addr, net::make_timespan(5));
+    }
+    event_loop_t::current().add_timer(make_timer(make_timespan(15), [&ctx]() {
+        ctx.exit_all(-1);
+        std::string str = "timeout";
+        GTEST_ASSERT_EQ(str, "");
+    }));
+    ctx.run();
+    GTEST_ASSERT_EQ(ok, cnt);
+}
+
 constexpr u64 test_size = 20480;
 constexpr u64 test_bit = 512;
 struct test_package_t

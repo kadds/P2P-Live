@@ -6,18 +6,11 @@
 TEST(ThreadPoolTest, BaseTest)
 {
     int ok = false;
-    std::mutex mutex;
     {
-        mutex.lock();
-        net::thread_pool_t poll(4);
-        poll.commit([&ok, &mutex]() {
-            ok = true;
-            mutex.unlock();
-        });
-        mutex.lock();
+        net::thread_pool_t pool(4);
+        pool.commit([&ok]() { ok = 1; });
     }
-    mutex.unlock();
-    GTEST_ASSERT_EQ(ok, true);
+    GTEST_ASSERT_EQ(ok, 1);
 }
 
 void calc(std::mutex &mutex, std::condition_variable &cv, std::atomic_int &c)

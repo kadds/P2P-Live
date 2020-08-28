@@ -1,0 +1,149 @@
+syntax = "proto3";
+
+package net;
+
+message InitReq {
+    uint64 sid = 1;
+}
+
+message InitRsp {
+    uint64 fragment_id_beg = 1;
+    uint64 fragment_id_end = 2;
+}
+
+message FragmentReq {
+    uint32 priority = 1;
+    repeated uint64 fragment_ids = 2;
+}
+
+message FragmentRsp {
+    uint64 fragment_id = 1;
+    uint64 length = 2;
+    bytes data = 3;
+}
+
+message FragmentRspRest {
+    bool is_rst = 1;
+    bytes data = 2;
+}
+
+message MetaReq {
+    uint64 key = 1;
+}
+
+message MetaRsp {
+    uint64 key = 1;
+    bytes value = 2;
+}
+
+message Cancel {
+    repeated uint64 fragment_ids = 1;
+}
+
+message Heart {
+
+}
+
+enum RequestNodeStrategy {
+    random = 0;
+    min_workload = 1;
+    edge_nodes = 2;
+}
+
+message PingPong {
+    uint32 peer_workload = 1;
+    uint32 tracker_neighbor_count = 2;    
+    uint32 port = 3;
+    uint32 udp_port = 4;
+}
+
+message TrackerInfoReq {
+
+}
+
+message TrackerInfoRsp {
+    uint32 port = 1;
+    uint32 udp_port = 2;
+    uint32 ip = 3;
+}
+
+message InitConnectionReq {
+    uint64 sid = 1;
+    bytes key = 2;
+}
+
+message InitConnectionRsp {
+
+}
+
+message TrackersReq {
+    uint32 max_count = 1;
+}
+
+message Tracker {
+    uint32 port = 1;
+    uint32 udp_port = 2;
+    uint32 ip = 3;
+}
+
+message TrackersRsp {
+    uint32 avl_count = 1;
+    repeated Tracker trackers = 2;
+}
+
+message Node {
+    uint32 port = 1;
+    uint32 udp_port = 2;
+    uint32 ip = 3;
+}
+
+message NodeReq {
+    uint32 max_count = 1;
+    uint64 sid = 2;
+    RequestNodeStrategy strategy = 3;
+}
+
+message NodeRsp {
+    uint32 avl_count = 1;
+    uint64 sid = 2;
+    repeated Node nodes = 3;
+}
+
+message UDPConnectionReq {
+    uint32 magic = 1;
+    uint32 target_port = 2;
+    uint32 target_ip  = 3;
+    uint32 from_port = 4;
+    uint32 from_ip = 5;
+    uint32 from_udp_port = 6;
+    uint64 sid = 7;
+}
+enum TrackerMsgType {
+    ping = 0;
+    pong = 1;
+    tracker_info_req = 2;
+    tracker_info_rsp = 3;
+    nodes_req = 4;
+    nodes_rsp = 5;
+    trackers_req = 6;
+    trackers_rsp = 7;
+    init_connection = 8;
+    heart = 9;
+    peer_req = 10;
+}
+
+
+message Package{
+    oneof msg {
+        InitReq init_req = 1;
+        InitRsp init_rsp = 2;
+        FragmentReq fragment_req = 3;
+        FragmentRsp fragment_rsp = 4;
+        FragmentRspRest  fragment_rsp_rest = 5;
+
+        MetaReq meta_req = 6;
+        MetaRsp meta_rsp = 7;
+        Cancel cancel = 8;
+        Heart heart = 10;
+    }
+}
