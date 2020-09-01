@@ -35,50 +35,10 @@ class socket_t;
 namespace net::tcp
 {
 /// tcp application head
-#pragma pack(push, 1)
-
-struct package_head_v1_t
-{
-    u8 version;
-    u16 size; /// payload length
-    using member_list_t = serialization::typelist_t<u8, u16>;
-};
-
-struct package_head_v2_t
-{
-    u8 version;
-    u32 size;
-    using member_list_t = serialization::typelist_t<u8, u32>;
-};
-
-struct package_head_v3_t
-{
-    u8 version;
-    u16 size;
-    u8 msg_type;
-    using member_list_t = serialization::typelist_t<u8, u16, u8>;
-};
-
-struct package_head_v4_t
-{
-    u8 version;
-    u32 size;
-    u16 msg_type;
-    using member_list_t = serialization::typelist_t<u8, u32, u16>;
-};
-
-#pragma pack(pop)
-
 struct package_head_t
 {
-    union
-    {
-        u8 version;
-        package_head_v1_t v1;
-        package_head_v2_t v2;
-        package_head_v3_t v3;
-        package_head_v4_t v4;
-    };
+    u32 size; /// payload length
+    using member_list_t = net::serialization::typelist_t<u32>;
 };
 
 class connection_t
@@ -94,7 +54,8 @@ class connection_t
     co::async_result_t<io_result> aread(co::paramter_t &param, socket_buffer_t &buffer);
 
     /// Wait for the next packet and read the tcp application header
-    co::async_result_t<io_result> aread_packet_head(co::paramter_t &param, package_head_t &head);
+    co::async_result_t<io_result> aread_packet_head(co::paramter_t &param, package_head_t &head,
+                                                    socket_buffer_t &buffer);
 
     co::async_result_t<io_result> aread_packet_content(co::paramter_t &param, socket_buffer_t &buffer);
 

@@ -26,6 +26,9 @@ along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
 #include "socket_addr.hpp"
 #include "socket_buffer.hpp"
 #include <queue>
+#ifdef OS_WINDOWS
+#include "iocp.hpp"
+#endif
 
 namespace net
 {
@@ -33,7 +36,8 @@ namespace net
 ///\note socket_t is destoried by 'delete_socket' which also close socketfd
 class socket_t : public execute_context_t, event_handler_t
 {
-    int fd;
+  protected:
+    handle_t fd;
     socket_addr_t local;
     socket_addr_t remote;
     bool is_connection_closed;
@@ -42,24 +46,19 @@ class socket_t : public execute_context_t, event_handler_t
     friend co::async_result_t<socket_t *> accept_from(co::paramter_t &, socket_t *in);
     friend class event_loop_t;
 
-  private:
-    io_result write_async(socket_buffer_t &buffer);
-    io_result read_async(socket_buffer_t &buffer);
-
-    io_result write_pack(socket_buffer_t &buffer, socket_addr_t target);
-    io_result read_pack(socket_buffer_t &buffer, socket_addr_t &target);
-
   public:
     socket_t(int fd);
     ~socket_t();
     socket_t(const socket_t &) = delete;
     socket_t &operator=(const socket_t &) = delete;
 
-    co::async_result_t<io_result> awrite(co::paramter_t &, socket_buffer_t &buffer);
-    co::async_result_t<io_result> aread(co::paramter_t &, socket_buffer_t &buffer);
+    virtual co::async_result_t<io_result> awrite(co::paramter_t &, socket_buffer_t &buffer) = 0;
+    virtual co::async_result_t<io_result> aread(co::paramter_t &, socket_buffer_t &buffer) = 0;
 
-    co::async_result_t<io_result> awrite_to(co::paramter_t &, socket_buffer_t &buffer, socket_addr_t target);
-    co::async_result_t<io_result> aread_from(co::paramter_t &, socket_buffer_t &buffer, socket_addr_t &target);
+    virtual co::async_result_t<io_result> awrite_to(co::paramter_t &, socket_buffer_t &buffer,
+                                                    socket_addr_t target) = 0;
+    virtual co::async_result_t<io_result> aread_from(co::paramter_t &, socket_buffer_t &buffer,
+                                                     socket_addr_t &target) = 0;
 
     socket_addr_t local_addr();
     socket_addr_t remote_addr();
@@ -69,12 +68,34 @@ class socket_t : public execute_context_t, event_handler_t
     void add_event(event_type_t type);
     void remove_event(event_type_t type);
 
-    int get_raw_handle() const { return fd; }
+    handle_t get_raw_handle() const { return fd; }
 
     bool is_connection_alive() const { return !is_connection_closed; }
 
     void bind_context(event_context_t &context);
     void unbind_context();
+};
+
+class bsd_socket_t : public socket_t
+{
+  public:
+    using socket_t::socket_t;
+    co::async_result_t<io_result> awrite(co::paramter_t &, socket_buffer_t &buffer) override;
+    co::async_result_t<io_result> aread(co::paramter_t &, socket_buffer_t &buffer) override;
+
+    co::async_result_t<io_result> awrite_to(co::paramter_t &, socket_buffer_t &buffer, socket_addr_t target) override;
+    co::async_result_t<io_result> aread_from(co::paramter_t &, socket_buffer_t &buffer, socket_addr_t &target) override;
+};
+
+class iocp_socket_t : public socket_t
+{
+  public:
+    using socket_t::socket_t;
+    co::async_result_t<io_result> awrite(co::paramter_t &, socket_buffer_t &buffer) override;
+    co::async_result_t<io_result> aread(co::paramter_t &, socket_buffer_t &buffer) override;
+
+    co::async_result_t<io_result> awrite_to(co::paramter_t &, socket_buffer_t &buffer, socket_addr_t target) override;
+    co::async_result_t<io_result> aread_from(co::paramter_t &, socket_buffer_t &buffer, socket_addr_t &target) override;
 };
 
 co::async_result_t<io_result> socket_awrite(co::paramter_t &param, socket_t *socket, socket_buffer_t &buffer);

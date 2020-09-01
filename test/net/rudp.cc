@@ -114,6 +114,7 @@ static void thread_main(event_context_t *context, socket_addr_t addr1, socket_ad
                         std::atomic_int &count_flag)
 {
 
+    context->prepare();
     rudp_t rudp2;
     rudp2.bind(*context, addr2, true);
 

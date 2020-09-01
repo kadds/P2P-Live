@@ -8,14 +8,8 @@ void nat_server_t::client_main(tcp::connection_t conn)
     tcp::package_head_t head;
     if (co::await(tcp::conn_aread_packet_head, conn, head) != io_result::ok)
         return;
-    if (head.version != 1)
-    {
-        return;
-    }
 
     nat_request_t request;
-    if (head.v3.size != sizeof(request))
-        return;
     socket_buffer_t buffer = socket_buffer_t::from_struct(request);
     buffer.expect().origin_length();
     if (co::await(tcp::conn_aread_packet_content, conn, buffer) != io_result::ok)
@@ -85,7 +79,6 @@ void net_detector_t::get_nat_type(event_context_t &ctx, socket_addr_t server, ha
 
     client.on_server_connect([udp_port, this, handler, server](tcp::client_t &c, tcp::connection_t conn) {
         tcp::package_head_t head;
-        head.version = 1;
         nat_request_t request;
         request.port = c.get_socket()->local_addr().get_port();
         request.ip = c.get_socket()->local_addr().v4_addr();

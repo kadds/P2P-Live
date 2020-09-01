@@ -73,7 +73,6 @@ TEST(TimerTest, TimerRemove)
 {
     event_context_t ctx(event_strategy::AUTO, 100000);
     microsecond_t point = get_current_time();
-    microsecond_t point2;
 
     auto tick = event_loop_t::current().add_timer(make_timer(make_timespan(1, 500), []() {
         std::string str = "timer remove failed";

@@ -21,6 +21,7 @@ along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
 #pragma once
 #include "net/net.hpp"
 #include <atomic>
+#include <google/protobuf/message.h>
 namespace net
 {
 
@@ -63,6 +64,12 @@ class socket_buffer_t
     /// init buffer with nothing, the pointer will not be initialized.
     socket_buffer_t();
     socket_buffer_t(u64 len);
+    socket_buffer_t(const google::protobuf::Message &msg)
+        : socket_buffer_t(msg.ByteSizeLong())
+    {
+        msg.SerializeWithCachedSizesToArray(ptr);
+        valid_data_length = buffer_size;
+    }
 
     /// init buffer with pointer
     socket_buffer_t(byte *buffer_ptr, u64 buffer_length);

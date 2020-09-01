@@ -104,7 +104,7 @@ TEST(PeerTest, DataTransport)
 
 TEST(PeerTest, TrackerPingPong)
 {
-    constexpr int test_count = 20;
+    constexpr int test_count = 5;
     event_context_t ctx(event_strategy::AUTO);
 
     bool ok = false;
@@ -145,7 +145,7 @@ TEST(PeerTest, TrackerPingPong)
 
 TEST(PeerTest, TrackerNode)
 {
-    constexpr int test_count = 25;
+    constexpr int test_count = 4;
     event_context_t ctx(event_strategy::AUTO);
 
     tracker_server_t tserver1;

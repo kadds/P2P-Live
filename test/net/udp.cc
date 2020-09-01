@@ -9,7 +9,7 @@
 static std::string test_data = "test string";
 using namespace net;
 
-TEST(UPDTest, UPDPackageTest)
+TEST(UDPTest, UDPPackageTest)
 {
     socket_addr_t test_addr("127.0.0.1", 2224);
     event_context_t ctx(event_strategy::AUTO);

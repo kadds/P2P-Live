@@ -36,7 +36,7 @@ namespace net
 using event_type_t = unsigned long;
 
 /// different handle types on different platforms
-using handle_t = int;
+using handle_t = long long;
 
 namespace event_type
 {
@@ -45,6 +45,7 @@ enum : event_type_t
     readable = 1,
     writable = 2,
     error = 4,
+    def = 8,
 };
 };
 /// forward declaration
@@ -52,8 +53,6 @@ class socket_t;
 class event_context_t;
 class event_loop_t;
 class execute_context_t;
-class event_fd_handler_t;
-class event_apc_handler_t;
 
 enum event_strategy
 {
@@ -92,6 +91,8 @@ class event_demultiplexer
     ///\param type unregister event type. readable, writable, error.
     ///
     virtual void remove(handle_t handle, event_type_t type) = 0;
+
+    virtual void wake_up(event_loop_t &cur_loop) = 0;
 
     virtual ~event_demultiplexer(){};
 };
@@ -132,13 +133,16 @@ class event_loop_t
     std::unique_ptr<time_manager_t> time_manager;
 
     execute_thread_dispatcher_t dispatcher;
+    bool has_wake_up;
 
 #ifndef OS_WINDOWS
-    ///  only for wake up demuxer
-    std::unique_ptr<event_fd_handler_t> wake_up_event_handler;
 #else
-    std::unique_ptr<event_apc_handler_t> wake_up_event_handler;
     HANDLE handle;
+
+  public:
+    HANDLE get_handle() { return handle; }
+
+  private:
 #endif
 
   private:
@@ -186,6 +190,8 @@ class event_loop_t
 
     /// wake up if event loop is sleeping.
     void wake_up();
+
+    event_context_t &get_context() { return *context; }
 };
 
 /// event context
@@ -205,9 +211,14 @@ class event_context_t
 
     /// timer precistion
     microsecond_t precision;
+    bool exit;
 
     /// init event loop in current thread
     void do_init();
+#ifdef OS_WINDOWS
+
+    handle_t iocp_handle;
+#endif
 
   public:
     event_context_t(event_strategy strategy, microsecond_t precision = timer_min_precision);
@@ -228,6 +239,10 @@ class event_context_t
     /// run event loop in current thread
     ///\note called for each thread to run the event loop in each thread.
     int run();
+
+    int prepare();
+
+    event_strategy get_strategy() { return strategy; }
 };
 
 } // namespace net

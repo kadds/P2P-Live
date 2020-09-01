@@ -118,20 +118,6 @@ message UDPConnectionReq {
     uint32 from_udp_port = 6;
     uint64 sid = 7;
 }
-enum TrackerMsgType {
-    ping = 0;
-    pong = 1;
-    tracker_info_req = 2;
-    tracker_info_rsp = 3;
-    nodes_req = 4;
-    nodes_rsp = 5;
-    trackers_req = 6;
-    trackers_rsp = 7;
-    init_connection = 8;
-    heart = 9;
-    peer_req = 10;
-}
-
 
 message Package{
     oneof msg {
@@ -145,5 +131,16 @@ message Package{
         MetaRsp meta_rsp = 7;
         Cancel cancel = 8;
         Heart heart = 10;
+        PingPong ping = 11;
+        PingPong pong = 12;
+        TrackerInfoReq tracker_info_req = 13;
+        TrackerInfoRsp tracker_info_rsp = 14;
+        InitConnectionReq init_connection_req = 15;
+        InitConnectionRsp init_connection_rsp = 16;
+        TrackersReq trackers_req = 17;
+        TrackersRsp trackers_rsp = 18;
+        NodeReq node_req = 19;
+        NodeRsp node_rsp = 20;
+        UDPConnectionReq udp_connection_req = 21;
     }
 }

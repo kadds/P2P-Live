@@ -101,9 +101,7 @@ void peer_t::send_init(rudp_connection_t conn)
     Package pkg;
     pkg.Clear();
     pkg.mutable_init_req()->set_sid(sid);
-    socket_buffer_t buffer(pkg.ByteSizeLong());
-    buffer.expect().origin_length();
-    pkg.SerializeWithCachedSizesToArray(buffer.get());
+    socket_buffer_t buffer(pkg);
     co::await(rudp_awrite, &udp, conn, buffer);
 }
 
@@ -311,9 +309,7 @@ void peer_t::heartbeat(rudp_connection_t conn)
     Package pkg;
     auto &heart = *pkg.mutable_heart();
 
-    socket_buffer_t send_buffer(pkg.ByteSizeLong());
-    send_buffer.expect().origin_length();
-    pkg.SerializeWithCachedSizesToArray(send_buffer.get());
+    socket_buffer_t send_buffer(pkg);
     co::await(rudp_awrite, &udp, conn, send_buffer);
 }
 
@@ -398,9 +394,7 @@ void peer_t::update_fragments(std::vector<fragment_id_t> ids, u8 priority, rudp_
         req.add_fragment_ids(id);
     }
 
-    socket_buffer_t send_buffer(pkg.ByteSizeLong());
-    send_buffer.expect().origin_length();
-    pkg.SerializeWithCachedSizesToArray(send_buffer.get());
+    socket_buffer_t send_buffer(pkg);
     co::await(rudp_awrite, &udp, conn, send_buffer);
 }
 
@@ -410,9 +404,7 @@ void peer_t::update_metainfo(u64 key, rudp_connection_t conn)
     auto &meta_req = *pkg.mutable_meta_req();
     meta_req.set_key(key);
 
-    socket_buffer_t send_buffer(pkg.ByteSizeLong());
-    send_buffer.expect().origin_length();
-    pkg.SerializeWithCachedSizesToArray(send_buffer.get());
+    socket_buffer_t send_buffer(pkg);
     co::await(rudp_awrite, &udp, conn, send_buffer);
 }
 
@@ -423,9 +415,7 @@ void peer_t::send_metainfo(u64 key, socket_buffer_t buffer, rudp_connection_t co
     meta_rsp.set_key(key);
     meta_rsp.set_value(buffer.to_string());
 
-    socket_buffer_t send_buffer(pkg.ByteSizeLong());
-    send_buffer.expect().origin_length();
-    pkg.SerializeWithCachedSizesToArray(send_buffer.get());
+    socket_buffer_t send_buffer(pkg);
     co::await(rudp_awrite, &udp, conn, send_buffer);
 }
 

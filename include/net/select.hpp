@@ -19,6 +19,7 @@ along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
 *
 */
 #pragma once
+#ifndef OS_WINDOWS
 #include "event.hpp"
 #include <unordered_map>
 
@@ -26,9 +27,16 @@ namespace net
 {
 class event_select_demultiplexer : public event_demultiplexer
 {
+#ifdef OS_WINDOWS
+    std::vector<WSAEVENT> events;
+    std::vector<handle_t> handles;
+    std::unordered_map<handle_t, long> map;
+#else
     fd_set read_set;
     fd_set write_set;
     fd_set error_set;
+    int fd;
+#endif
 
   public:
     event_select_demultiplexer();
@@ -36,6 +44,8 @@ class event_select_demultiplexer : public event_demultiplexer
     void add(handle_t handle, event_type_t type) override;
     handle_t select(event_type_t *type, microsecond_t *timeout) override;
     void remove(handle_t handle, event_type_t type) override;
+    void wake_up(event_loop_t &cur_loop) override;
 };
 
 } // namespace net
+#endif

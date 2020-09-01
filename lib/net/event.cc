@@ -12,65 +12,30 @@ namespace net
 {
 thread_local event_loop_t *thread_in_loop;
 
-#ifndef OS_WINDOWS
-class event_fd_handler_t : public event_handler_t
-{
-    int fd;
-
-  public:
-    event_fd_handler_t() { fd = eventfd(1, 0); }
-    ~event_fd_handler_t() { close(fd); }
-
-    int get_fd() const { return fd; }
-
-    void on_event(event_context_t &, event_type_t type) override
-    {
-        eventfd_t vl;
-        /// wake up epoll/select
-        eventfd_read(fd, &vl);
-    }
-
-    void write(event_loop_t &loop) const { eventfd_write(fd, 1); }
-};
-#else
-VOID WINAPI APCFunc(ULONG_PTR dwParam) {}
-
-class event_apc_handler_t : public event_handler_t
-{
-  public:
-    event_apc_handler_t() {}
-    ~event_apc_handler_t() {}
-    void on_event(event_context_t &, event_type_t type) override {}
-
-    void write(event_loop_t &loop) const { QueueUserAPC(APCFunc, loop.handle, 0); }
-};
-#endif
-
 event_loop_t::event_loop_t(microsecond_t precision)
     : is_exit(false)
+    , has_wake_up(false)
     , exit_code(0)
 {
     time_manager = create_time_manager(precision);
     thread_in_loop = this;
 #ifdef OS_WINDOWS
-    handle = GetCurrentThread();
+    HANDLE hThreadParent;
+    DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &hThreadParent, 0, FALSE,
+                    DUPLICATE_SAME_ACCESS);
+    handle = hThreadParent;
 #endif
 }
 
-event_loop_t::~event_loop_t() { thread_in_loop = nullptr; }
-
-void event_loop_t::set_demuxer(event_demultiplexer *demuxer)
+event_loop_t::~event_loop_t()
 {
-    this->demuxer = demuxer;
-#ifndef OS_WINDOWS
-    wake_up_event_handler = std::make_unique<event_fd_handler_t>();
-    auto fd = wake_up_event_handler->get_fd();
-    add_event_handler(fd, wake_up_event_handler.get());
-    demuxer->add(fd, event_type::readable);
-#else
-    wake_up_event_handler = std::make_unique<event_apc_handler_t>();
+    thread_in_loop = nullptr;
+#ifdef OS_WINDOWS
+    CloseHandle(handle);
 #endif
 }
+
+void event_loop_t::set_demuxer(event_demultiplexer *demuxer) { this->demuxer = demuxer; }
 
 void event_loop_t::add_event_handler(handle_t handle, event_handler_t *handler)
 {
@@ -123,6 +88,7 @@ int event_loop_t::run()
         if (is_exit)
             break;
 
+        has_wake_up = false;
         auto handle = demuxer->select(&type, &timeout);
         if (handle != 0)
         {
@@ -147,7 +113,7 @@ void event_loop_t::exit(int code)
 {
     exit_code = code;
     is_exit = true;
-    wake_up();
+    demuxer->wake_up(*this);
 }
 
 void event_loop_t::wake_up()
@@ -155,10 +121,12 @@ void event_loop_t::wake_up()
     /// no need for wake in current thread
     if (this == thread_in_loop)
         return;
-    wake_up_event_handler->write(*this);
+    if (!has_wake_up)
+        demuxer->wake_up(*this);
+    has_wake_up = true;
 }
 
-int event_loop_t::load_factor() { return event_map.size(); }
+int event_loop_t::load_factor() { return (int)event_map.size(); }
 
 event_loop_t &event_loop_t::current() { return *thread_in_loop; }
 
@@ -198,16 +166,32 @@ event_loop_t &event_context_t::select_loop()
 
 void event_context_t::do_init()
 {
-    if (thread_in_loop == nullptr)
+    if (thread_in_loop == nullptr && !exit)
     {
         auto loop = new event_loop_t(precision);
         std::unique_lock<std::shared_mutex> lock(loop_mutex);
+        if (exit)
+        {
+            return;
+        }
         loop->set_context(this);
         event_demultiplexer *demuxer = nullptr;
+        if (strategy == event_strategy::AUTO)
+        {
+#ifdef OS_WINDOWS
+            strategy = event_strategy::IOCP;
+#else
+            strategy = event_strategy::epoll;
+#endif
+        }
         switch (strategy)
         {
             case event_strategy::select:
+#ifdef OS_WINDOWS
+                throw std::invalid_argument("not support select on windows");
+#else
                 demuxer = new event_select_demultiplexer();
+#endif
                 break;
             case event_strategy::epoll:
 #ifdef OS_WINDOWS
@@ -220,14 +204,12 @@ void event_context_t::do_init()
 #ifndef OS_WINDOWS
                 throw std::invalid_argument("not support epoll on unix/linux");
 #else
-                demuxer = new event_iocp_demultiplexer();
+                if (iocp_handle == 0)
+                {
+                    iocp_handle = event_iocp_demultiplexer::make();
+                }
+                demuxer = new event_iocp_demultiplexer(iocp_handle);
 #endif
-                break;
-            case event_strategy::AUTO:
-#ifndef OS_WINDOWS
-
-#endif
-                demuxer = new event_select_demultiplexer();
                 break;
             default:
                 throw std::invalid_argument("invalid strategy " + std::to_string(strategy));
@@ -242,13 +224,19 @@ event_context_t::event_context_t(event_strategy strategy, microsecond_t precisio
     : strategy(strategy)
     , loop_counter(0)
     , precision(precision)
+    , exit(false)
 {
+#ifdef OS_WINDOWS
+    iocp_handle = 0;
+#endif
     do_init();
 }
 
 int event_context_t::run()
 {
     do_init();
+    if (thread_in_loop == nullptr)
+        return 0;
 
     int code = thread_in_loop->run();
 
@@ -260,8 +248,16 @@ int event_context_t::run()
     return code;
 }
 
+int event_context_t::prepare()
+{
+    do_init();
+    return 0;
+}
+
 void event_context_t::exit_all(int code)
 {
+    exit = true;
+    std::unique_lock<std::shared_mutex> lock(loop_mutex);
     for (auto &loop : loops)
     {
         loop->exit(code);
@@ -276,6 +272,13 @@ event_context_t::~event_context_t()
         delete loop->get_demuxer();
         delete loop;
     }
+#ifdef OS_WINDOWS
+    if (iocp_handle != 0)
+    {
+        event_iocp_demultiplexer::close(iocp_handle);
+        iocp_handle = 0;
+    }
+#endif
 }
 
 } // namespace net

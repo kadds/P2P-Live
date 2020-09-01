@@ -12,16 +12,25 @@ const u32 magic = 0x5faf2412;
 io_result do_ping_pong(tcp::connection_t conn, u16 port, u16 udp_port, u32 workload, u32 trackers, int code)
 {
     tcp::package_head_t head;
-    head.version = 4;
-    head.v4.msg_type = code;
-    PingPong pong;
-    pong.set_port(port);
-    pong.set_udp_port(udp_port);
-    pong.set_peer_workload(workload);
-    pong.set_tracker_neighbor_count(trackers);
-    socket_buffer_t buffer(pong.ByteSizeLong());
-    buffer.expect().origin_length();
-    pong.SerializeWithCachedSizesToArray(buffer.get());
+    Package pkg;
+    if (code == 0)
+    {
+        auto pong = pkg.mutable_ping();
+        pong->set_port(port);
+        pong->set_udp_port(udp_port);
+        pong->set_peer_workload(workload);
+        pong->set_tracker_neighbor_count(trackers);
+    }
+    else
+    {
+
+        auto pong = pkg.mutable_pong();
+        pong->set_port(port);
+        pong->set_udp_port(udp_port);
+        pong->set_peer_workload(workload);
+        pong->set_tracker_neighbor_count(trackers);
+    }
+    socket_buffer_t buffer(pkg);
     return co::await(tcp::conn_awrite_packet, conn, head, buffer);
 }
 
@@ -49,60 +58,48 @@ void tracker_server_t::server_main(tcp::connection_t conn)
 {
     tcp::package_head_t head;
     auto remote_addr = conn.get_socket()->remote_addr();
+    Package pkg;
     while (1)
     {
         if (co::await(tcp::conn_aread_packet_head, conn, head) != io_result::ok)
             return;
-        if (head.version != 4)
-            return;
 
-        int len = head.v4.size;
-        if (head.v4.msg_type == TrackerMsgType::ping)
+        auto len = head.size;
+        socket_buffer_t buffer(len);
+        buffer.expect().origin_length();
+        if (co::await(tcp::conn_aread_packet_content, conn, buffer) != io_result::ok)
+            return;
+        pkg.ParseFromArray(buffer.get(), buffer.get_length());
+        if (pkg.has_ping())
         {
-            socket_buffer_t buffer(len);
-            buffer.expect().origin_length();
-            if (co::await(tcp::conn_aread_packet_content, conn, buffer) != io_result::ok)
-                return;
-            PingPong ping;
-            ping.ParseFromArray(buffer.get(), buffer.get_length());
+            PingPong &ping = *pkg.mutable_ping();
 
             // save
             update_tracker(remote_addr, conn, ping);
             int local_tcp_port = server.get_socket()->local_addr().get_port();
             int local_udp_port = udp.get_socket()->local_addr().get_port();
 
-            do_ping_pong(conn, local_tcp_port, local_udp_port, nodes.size(), trackers.size(), TrackerMsgType::pong);
+            do_ping_pong(conn, local_tcp_port, local_udp_port, nodes.size(), trackers.size(), 1);
         }
-        else if (head.v4.msg_type == TrackerMsgType::tracker_info_req)
+        else if (pkg.has_tracker_info_req())
         {
-            TrackerInfoRsp rsp;
+            Package pkg;
+            TrackerInfoRsp &rsp = *pkg.mutable_tracker_info_rsp();
             /// get address NAT
             rsp.set_port(conn.get_socket()->remote_addr().get_port());
             rsp.set_ip(conn.get_socket()->remote_addr().v4_addr());
             rsp.set_udp_port(udp_port);
-            socket_buffer_t buffer(rsp.ByteSizeLong());
-            buffer.expect().origin_length();
-            rsp.SerializeWithCachedSizesToArray(buffer.get());
-
-            head.version = 4;
-            head.v4.msg_type = TrackerMsgType::tracker_info_rsp;
+            socket_buffer_t buffer(pkg);
 
             co::await(tcp::conn_awrite_packet, conn, head, buffer);
         }
-        else if (head.v4.msg_type == TrackerMsgType::nodes_req)
+        else if (pkg.has_node_req())
         {
-
-            socket_buffer_t buffer(len);
-            buffer.expect().origin_length();
-            if (co::await(tcp::conn_aread_packet_content, conn, buffer) != io_result::ok)
-                return;
-            NodeReq req;
-            req.ParseFromArray(buffer.get(), buffer.get_length());
-            NodeRsp rsp;
+            NodeReq &req = *pkg.mutable_node_req();
+            Package pkg;
+            NodeRsp &rsp = *pkg.mutable_node_rsp();
 
             int cnt = std::min((int)req.max_count(), 500);
-            head.version = 4;
-            head.v4.msg_type = TrackerMsgType::nodes_rsp;
             // use buffer from 'data'
             auto cur_time = get_current_time();
             if (req.strategy() == RequestNodeStrategy::random)
@@ -185,28 +182,18 @@ void tracker_server_t::server_main(tcp::connection_t conn)
             rsp.set_sid(req.sid());
             {
 
-                socket_buffer_t buffer(rsp.ByteSizeLong());
-                buffer.expect().origin_length();
-                rsp.SerializeWithCachedSizesToArray(buffer.get());
-
+                socket_buffer_t buffer(pkg);
                 co::await(tcp::conn_awrite_packet, conn, head, buffer);
             }
         }
-        else if (head.v4.msg_type == TrackerMsgType::trackers_req)
+        else if (pkg.has_trackers_req())
         {
-
-            socket_buffer_t buffer(len);
-            buffer.expect().origin_length();
-            if (co::await(tcp::conn_aread_packet_content, conn, buffer) != io_result::ok)
-                return;
-            TrackersReq req;
-            req.ParseFromArray(buffer.get(), buffer.get_length());
-            TrackersRsp rsp;
+            TrackersReq &req = *pkg.mutable_trackers_req();
+            Package pkg;
+            TrackersRsp &rsp = *pkg.mutable_trackers_rsp();
 
             auto cnt = std::min(500u, req.max_count());
             // set respond header
-            head.version = 4;
-            head.v4.msg_type = TrackerMsgType::trackers_rsp;
             /// fill data
             int i = 0;
             for (auto it = trackers.begin(); it != trackers.end();)
@@ -231,21 +218,14 @@ void tracker_server_t::server_main(tcp::connection_t conn)
             rsp.set_avl_count(i);
             {
 
-                socket_buffer_t buffer(rsp.ByteSizeLong());
-                buffer.expect().origin_length();
-                rsp.SerializeWithCachedSizesToArray(buffer.get());
-
+                socket_buffer_t buffer(pkg);
                 // send
                 co::await(tcp::conn_awrite_packet, conn, head, buffer);
             }
         }
-        else if (head.v4.msg_type == TrackerMsgType::init_connection)
+        else if (pkg.has_init_connection_req())
         {
-            socket_buffer_t buffer(len);
-            buffer.expect().origin_length();
-            co::await(tcp::conn_aread_packet_content, conn, buffer);
-            InitConnectionReq req;
-            req.ParseFromArray(buffer.get(), buffer.get_length());
+            InitConnectionReq &req = *pkg.mutable_init_connection_req();
 
             if (req.sid() == 0) // if sid == 0. it is edge server
             {
@@ -279,13 +259,8 @@ void tracker_server_t::server_main(tcp::connection_t conn)
             if (add_handler)
                 add_handler(*this, node.node, node.sid);
         }
-        else if (head.v4.msg_type == TrackerMsgType::heart)
+        else if (pkg.has_heart())
         {
-            socket_buffer_t buffer(len);
-            buffer.expect().origin_length();
-            if (co::await(tcp::conn_aread_packet_content, conn, buffer) != io_result::ok)
-                return;
-
             auto addr = conn.get_socket()->remote_addr();
             auto it = nodes.find(addr);
             if (it == nodes.end())
@@ -310,7 +285,8 @@ void tracker_server_t::client_main(tcp::connection_t conn)
 
     int local_tcp_port = server.get_socket()->local_addr().get_port();
     int local_udp_port = udp.get_socket()->local_addr().get_port();
-    do_ping_pong(conn, local_tcp_port, local_udp_port, nodes.size(), trackers.size(), TrackerMsgType::ping);
+    do_ping_pong(conn, local_tcp_port, local_udp_port, nodes.size(), trackers.size(), 0);
+    Package pkg;
 
     while (1)
     {
@@ -333,15 +309,14 @@ void tracker_server_t::client_main(tcp::connection_t conn)
                 {
                     int local_tcp_port = server.get_socket()->local_addr().get_port();
                     int local_udp_port = udp.get_socket()->local_addr().get_port();
-                    do_ping_pong(conn, local_tcp_port, local_udp_port, nodes.size(), trackers.size(),
-                                 TrackerMsgType::ping);
+                    do_ping_pong(conn, local_tcp_port, local_udp_port, nodes.size(), trackers.size(), 0);
                 }
             }
             else
             {
                 int local_tcp_port = server.get_socket()->local_addr().get_port();
                 int local_udp_port = udp.get_socket()->local_addr().get_port();
-                do_ping_pong(conn, local_tcp_port, local_udp_port, nodes.size(), trackers.size(), TrackerMsgType::ping);
+                do_ping_pong(conn, local_tcp_port, local_udp_port, nodes.size(), trackers.size(), 0);
             }
         }
         else if (ret != io_result::ok)
@@ -351,21 +326,15 @@ void tracker_server_t::client_main(tcp::connection_t conn)
             return;
         }
 
-        if (head.version != 4)
-        {
-            if (link_error_handler)
-                link_error_handler(*this, remote_addr, connection_state::invalid_request);
+        auto len = head.size;
+        socket_buffer_t buffer(len);
+        buffer.expect().origin_length();
+        if (co::await(tcp::conn_aread_packet_content, conn, buffer) != io_result::ok)
             return;
-        }
-        auto len = head.v4.size;
-        if (head.v4.msg_type == TrackerMsgType::pong) // pong
+        pkg.ParseFromArray(buffer.get(), buffer.get_length());
+        if (pkg.has_pong()) // pong
         {
-            socket_buffer_t buffer(len);
-            buffer.expect().origin_length();
-            if (co::await(tcp::conn_aread_packet_content, conn, buffer) != io_result::ok)
-                return;
-            PingPong pong;
-            pong.ParseFromArray(buffer.get(), buffer.get_length());
+            PingPong &pong = *pkg.mutable_pong();
 
             // save
             update_tracker(remote_addr, conn, pong);
@@ -382,9 +351,9 @@ void tracker_server_t::udp_main(rudp_connection_t conn)
 {
     socket_buffer_t buffer(udp.get_mtu());
     buffer.expect().origin_length();
-    int ch;
     co::await(rudp_aread, &udp, conn, buffer);
-    UDPConnectionReq req;
+    Package pkg;
+    UDPConnectionReq &req = *pkg.mutable_udp_connection_req();
     req.ParseFromArray(buffer.get(), buffer.get_length());
 
     if (req.magic() != magic)
@@ -404,21 +373,17 @@ void tracker_server_t::udp_main(rudp_connection_t conn)
     /// NOTE: this port may be a NAT port
     req.set_from_udp_port(conn.address.get_port());
     if (node_info.conn.get_socket()->is_connection_alive())
-        node_info.conn.get_socket()->start_with([tcpconn, req, this, node_info]() {
+        node_info.conn.get_socket()->start_with([tcpconn, pkg, this, node_info]() {
             if (normal_peer_connect_handler)
             {
                 peer_node_t node;
-                node.ip = req.target_ip();
-                node.port = req.target_port();
+                node.ip = pkg.udp_connection_req().target_ip();
+                node.port = pkg.udp_connection_req().target_port();
                 node.udp_port = 0;
                 normal_peer_connect_handler(*this, node);
             }
             tcp::package_head_t head;
-            head.version = 4;
-            head.v4.msg_type = TrackerMsgType::peer_req;
-            socket_buffer_t buffer(req.ByteSizeLong());
-            buffer.expect().origin_length();
-            req.SerializeWithCachedSizesToArray(buffer.get());
+            socket_buffer_t buffer(pkg);
             co::await(tcp::conn_awrite_packet, tcpconn, head, buffer);
         });
 }
@@ -581,41 +546,32 @@ std::vector<tracker_node_t> tracker_server_t::get_trackers() const
 void heartbeat(tcp::connection_t conn)
 {
     tcp::package_head_t head;
-    head.version = 4;
-    head.v4.msg_type = TrackerMsgType::heart;
-    Heart req;
+    Package pkg;
+    Heart &req = *pkg.mutable_heart();
 
-    socket_buffer_t buffer(req.ByteSizeLong());
-    buffer.expect().origin_length();
-    req.SerializeWithCachedSizesToArray(buffer.get());
+    socket_buffer_t buffer(pkg);
     co::await(tcp::conn_awrite_packet, conn, head, buffer);
 }
 
 void update_info(tcp::connection_t conn)
 {
     tcp::package_head_t head;
-    head.version = 4;
-    head.v4.msg_type = TrackerMsgType::tracker_info_req;
-    TrackerInfoReq req;
+    Package pkg;
+    TrackerInfoReq req = *pkg.mutable_tracker_info_req();
 
-    socket_buffer_t buffer(req.ByteSizeLong());
-    buffer.expect().origin_length();
-    req.SerializeWithCachedSizesToArray(buffer.get());
+    socket_buffer_t buffer(pkg);
     co::await(tcp::conn_awrite_packet, conn, head, buffer);
 }
 
 void init_long_connection(tcp::connection_t conn, u64 sid, std::string key)
 {
     tcp::package_head_t head;
-    head.version = 4;
-    head.v4.msg_type = TrackerMsgType::init_connection;
-    InitConnectionReq req;
+    Package pkg;
+    InitConnectionReq &req = *pkg.mutable_init_connection_req();
     req.set_sid(sid);
     req.set_key(key);
 
-    socket_buffer_t buffer(req.ByteSizeLong());
-    buffer.expect().origin_length();
-    req.SerializeWithCachedSizesToArray(buffer.get());
+    socket_buffer_t buffer(pkg);
     if (co::await(tcp::conn_awrite_packet, conn, head, buffer) != io_result::ok)
         return;
 }
@@ -650,29 +606,23 @@ void tracker_node_client_t::tmain(tcp::connection_t conn)
             heartbeat(conn);
             continue;
         }
-        if (head.version != 4)
-            return;
-        auto len = head.v4.size;
-
-        if (head.v4.msg_type == TrackerMsgType::tracker_info_rsp)
+        auto len = head.size;
+        socket_buffer_t buffer(len);
+        buffer.expect().origin_length();
+        co::await(tcp::conn_aread_packet_content, conn, buffer);
+        Package pkg;
+        pkg.ParseFromArray(buffer.get(), buffer.get_length());
+        if (pkg.has_tracker_info_rsp())
         {
-            socket_buffer_t buffer(len);
-            buffer.expect().origin_length();
-            co::await(tcp::conn_aread_packet_content, conn, buffer);
-            TrackerInfoRsp rsp;
-            rsp.ParseFromArray(buffer.get(), buffer.get_length());
+            TrackerInfoRsp &rsp = *pkg.mutable_tracker_info_rsp();
             server_udp_address = socket_addr_t(conn.get_socket()->remote_addr().v4_addr(), rsp.udp_port());
             client_outer_port = rsp.port();
             client_outer_ip = rsp.ip();
             client_rudp_port = rsp.udp_port();
         }
-        else if (head.v4.msg_type == TrackerMsgType::nodes_rsp)
+        else if (pkg.has_node_rsp())
         {
-            socket_buffer_t buffer(len);
-            buffer.expect().origin_length();
-            co::await(tcp::conn_aread_packet_content, conn, buffer);
-            NodeRsp rsp;
-            rsp.ParseFromArray(buffer.get(), buffer.get_length());
+            NodeRsp &rsp = *pkg.mutable_node_rsp();
             /// get rest node
             if (rsp.nodes_size() > 0)
             {
@@ -692,13 +642,9 @@ void tracker_node_client_t::tmain(tcp::connection_t conn)
             else if (node_update_handler)
                 node_update_handler(*this, (peer_node_t *)nullptr, 0);
         }
-        else if (head.v4.msg_type == TrackerMsgType::trackers_rsp)
+        else if (pkg.has_trackers_rsp())
         {
-            socket_buffer_t buffer(len);
-            buffer.expect().origin_length();
-            co::await(tcp::conn_aread_packet_content, conn, buffer);
-            TrackersRsp rsp;
-            rsp.ParseFromArray(buffer.get(), buffer.get_length());
+            TrackersRsp &rsp = *pkg.mutable_trackers_rsp();
             /// get rest node
             std::vector<tracker_node_t> nodes;
             for (auto i = 0; i < rsp.trackers_size(); i++)
@@ -713,14 +659,9 @@ void tracker_node_client_t::tmain(tcp::connection_t conn)
             if (tracker_update_handler)
                 tracker_update_handler(*this, (tracker_node_t *)nodes.data(), (u64)nodes.size());
         }
-        else if (head.v4.msg_type == TrackerMsgType::peer_req)
+        else if (pkg.has_udp_connection_req())
         {
-            socket_buffer_t buffer(len);
-            buffer.expect().origin_length();
-
-            co::await(tcp::conn_aread_packet_content, conn, buffer);
-            UDPConnectionReq req;
-            req.ParseFromArray(buffer.get(), buffer.get_length());
+            UDPConnectionReq &req = *pkg.mutable_udp_connection_req();
 
             if (req.magic() != magic || (req.sid() != sid && sid != 0))
                 continue;
@@ -771,16 +712,13 @@ void tracker_node_client_t::update_nodes()
         node_queue.pop();
 
         tcp::package_head_t head;
-        head.version = 4;
-        head.v4.msg_type = TrackerMsgType::nodes_req;
-        NodeReq req;
+        Package pkg;
+        NodeReq &req = *pkg.mutable_node_req();
         req.set_sid(sid);
         req.set_strategy(std::get<RequestNodeStrategy>(node));
         req.set_max_count(std::get<int>(node));
 
-        socket_buffer_t buffer(req.ByteSizeLong());
-        buffer.expect().origin_length();
-        req.SerializeWithCachedSizesToArray(buffer.get());
+        socket_buffer_t buffer(pkg);
         tcp::connection_t conn = client.get_connection();
         co::await(tcp::conn_awrite_packet, conn, head, buffer);
     }
@@ -789,13 +727,10 @@ void tracker_node_client_t::update_nodes()
 void tracker_node_client_t::update_trackers(int count)
 {
     tcp::package_head_t head;
-    head.version = 4;
-    head.v4.msg_type = TrackerMsgType::trackers_req;
-    TrackersReq req;
+    Package pkg;
+    TrackersReq &req = *pkg.mutable_trackers_req();
     req.set_max_count(count);
-    socket_buffer_t buffer(req.ByteSizeLong());
-    buffer.expect().origin_length();
-    req.SerializeWithCachedSizesToArray(buffer.get());
+    socket_buffer_t buffer(pkg);
     tcp::connection_t conn = client.get_connection();
     co::await(tcp::conn_awrite_packet, conn, head, buffer);
 }
@@ -830,7 +765,9 @@ void tracker_node_client_t::request_update_nodes(int max_count, RequestNodeStrat
 void tracker_node_client_t::request_connect_node(peer_node_t node, rudp_t &udp)
 {
     udp.add_connection(server_udp_address, 0, timeout, [this, &udp, node](rudp_connection_t conn) {
-        UDPConnectionReq req;
+        Package pkg;
+
+        UDPConnectionReq &req = *pkg.mutable_udp_connection_req();
         req.set_magic(magic);
         req.set_from_ip(client_outer_ip);
         req.set_from_port(client_outer_port);
@@ -838,9 +775,7 @@ void tracker_node_client_t::request_connect_node(peer_node_t node, rudp_t &udp)
         req.set_target_ip(node.ip);
         req.set_target_port(node.port);
         req.set_sid(sid);
-        socket_buffer_t buffer(req.ByteSizeLong());
-        req.SerializeToArray(buffer.get(), buffer.get_length());
-        buffer.expect().origin_length();
+        socket_buffer_t buffer(pkg);
         co::await(rudp_awrite, &udp, conn, buffer);
     });
 }

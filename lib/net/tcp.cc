@@ -17,79 +17,18 @@ co::async_result_t<io_result> connection_t::aread(co::paramter_t &param, socket_
 }
 
 /// wait next packet and read tcp application head
-co::async_result_t<io_result> connection_t::aread_packet_head(co::paramter_t &param, package_head_t &head)
+co::async_result_t<io_result> connection_t::aread_packet_head(co::paramter_t &param, package_head_t &head,
+                                                              socket_buffer_t &buffer)
 {
-    if (param.get_user_ptr() == 0) /// version none, first read
+    assert((char *)buffer.get() == (char *)&head);
+    /// first read version bytes
+    auto ret = socket_aread(param, socket, buffer);
+    if (ret.is_finish())
     {
-        socket_buffer_t buffer = socket_buffer_t::from_struct(head);
-        /// first read version bytes
-        buffer.expect().length(sizeof(head.version));
-
-        auto res = socket_aread(param, socket, buffer);
-        if (!res.is_finish())
-        {
-            return {};
-        }
-        if (res() != io_result::ok)
-            return res();
-        if (head.version > 4 || head.version < 1) /// unknown header version
-            return io_result::failed;
-
-        /// save state, and we don't execute this branch any more.
-        param.set_user_ptr((void *)1);
+        endian::cast_inplace(head, buffer);
+        return ret();
     }
-    // read rest head
-
-    socket_buffer_t buffer = socket_buffer_t::from_struct(head);
-    int length;
-    assert(head.version <= 4 && head.version >= 1);
-    switch (head.version)
-    {
-        case 1:
-            length = sizeof(head.v1);
-            break;
-        case 2:
-            length = sizeof(head.v2);
-            break;
-        case 3:
-            length = sizeof(head.v3);
-            break;
-        case 4:
-            length = sizeof(head.v4);
-            break;
-        default:
-            break;
-    }
-    buffer.expect().length(length);         /// set size we expect
-    buffer.walk_step(sizeof(head.version)); /// save to buffer at offset 1.
-
-    auto res = socket_aread(param, socket, buffer);
-    if (res.is_finish())
-    {
-        if (res() == io_result::ok)
-        {
-            buffer.get_base_ptr()[0] = head.version;
-            buffer.expect().origin_length();
-            switch (head.version)
-            {
-                case 1:
-                    endian::cast_inplace(head.v1, buffer);
-                    break;
-                case 2:
-                    endian::cast_inplace(head.v2, buffer);
-                    break;
-                case 3:
-                    endian::cast_inplace(head.v3, buffer);
-                    break;
-                case 4:
-                    endian::cast_inplace(head.v4, buffer);
-                    break;
-                default:
-                    break;
-            }
-        }
-    }
-    return res;
+    return ret;
 }
 
 co::async_result_t<io_result> connection_t::aread_packet_content(co::paramter_t &param, socket_buffer_t &buffer)
@@ -111,7 +50,7 @@ co::async_result_t<io_result> set_head_and_send(co::paramter_t &param, E &head, 
     {
         if (ret() == io_result::ok)
         {
-            param.set_user_ptr((void *)1);
+            param.set_user_state(1);
             return ret;
         }
     }
@@ -121,60 +60,19 @@ co::async_result_t<io_result> set_head_and_send(co::paramter_t &param, E &head, 
 co::async_result_t<io_result> connection_t::awrite_packet(co::paramter_t &param, package_head_t &head,
                                                           socket_buffer_t &buffer)
 {
-send_head:
-    if (param.get_user_ptr() == 0)
+    int head_buffer_size = sizeof(head);
+    head.size = buffer.get_length();
+    socket_buffer_t head_buffer(head_buffer_size);
+
+    head_buffer.expect().origin_length();
+    endian::save_to(head, head_buffer);
+    auto ret = co::await_p(std::ref(param), socket_awrite, socket, head_buffer);
+    if (ret != io_result::ok)
     {
-        int head_buffer_size;
-        switch (head.version)
-        {
-            case 1: {
-                auto ret = set_head_and_send(param, head.v1, buffer.get_length(), socket);
-                if (ret.is_finish())
-                {
-                    if (ret() != io_result::ok)
-                        return ret;
-                    break;
-                }
-            }
-                return {};
-            case 2: {
-                auto ret = set_head_and_send(param, head.v2, buffer.get_length(), socket);
-                if (ret.is_finish())
-                {
-                    if (ret() != io_result::ok)
-                        return ret;
-                    break;
-                }
-            }
-                return {};
-            case 3: {
-                auto ret = set_head_and_send(param, head.v3, buffer.get_length(), socket);
-                if (ret.is_finish())
-                {
-                    if (ret() != io_result::ok)
-                        return ret;
-                    break;
-                }
-            }
-                return {};
-            case 4: {
-                auto ret = set_head_and_send(param, head.v4, buffer.get_length(), socket);
-                if (ret.is_finish())
-                {
-                    if (ret() != io_result::ok)
-                        return ret;
-                    break;
-                }
-            }
-                return {};
-            default:
-                return io_result::failed;
-        }
+        return ret;
     }
 
-send_data:
-
-    return socket_awrite(param, socket, buffer);
+    return co::await_p(std::ref(param), socket_awrite, socket, buffer);
 }
 
 co::async_result_t<io_result> conn_awrite(co::paramter_t &param, connection_t conn, socket_buffer_t &buffer)
@@ -187,7 +85,9 @@ co::async_result_t<io_result> conn_aread(co::paramter_t &param, connection_t con
 }
 co::async_result_t<io_result> conn_aread_packet_head(co::paramter_t &param, connection_t conn, package_head_t &head)
 {
-    return conn.aread_packet_head(param, head);
+    auto buf = socket_buffer_t::from_struct(head);
+    buf.expect().origin_length();
+    return conn.aread_packet_head(param, head, buf);
 }
 co::async_result_t<io_result> conn_aread_packet_content(co::paramter_t &param, connection_t conn,
                                                         socket_buffer_t &buffer)

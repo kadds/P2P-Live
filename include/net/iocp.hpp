@@ -26,16 +26,46 @@ along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
 
 namespace net
 {
+
+enum class io_type
+{
+    read,
+    write,
+    accept,
+    wake_up,
+    connect,
+};
+
+struct io_overlapped
+{
+    WSAOVERLAPPED overlapped;
+    WSABUF wsaBuf;
+    unsigned int buffer_do_len;
+    sockaddr_in addr;
+    int addr_len;
+    int err;
+    HANDLE sock;
+    io_type type;
+    void *data;
+    bool done;
+    io_overlapped();
+};
+
 class event_iocp_demultiplexer : public event_demultiplexer
 {
-    int handle;
+    handle_t iocp_handle;
+    std::unordered_map<handle_t, handle_t> map;
 
   public:
-    event_iocp_demultiplexer();
+    static handle_t make();
+    static void close(handle_t h);
+
+    event_iocp_demultiplexer(handle_t);
     ~event_iocp_demultiplexer();
     void add(handle_t handle, event_type_t type) override;
     handle_t select(event_type_t *type, microsecond_t *timeout) override;
     void remove(handle_t handle, event_type_t type) override;
+    void wake_up(event_loop_t &cur_loop) override;
 };
 } // namespace net
 #endif

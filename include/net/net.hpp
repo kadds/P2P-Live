@@ -39,13 +39,25 @@ along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
 #else
 /// windows headers
 #define NOMINMAX
+
 #include <WinSock2.h>
-#include <windows.h>
+
+#include <Windows.h>
+
+#include <mswsock.h>
 #include <ws2tcpip.h>
 #pragma comment(lib, "Ws2_32.lib")
 #define WOULDBLOCK WSAEWOULDBLOCK
 #endif
 #include "net_exception.hpp"
+#ifdef _MSC_VER
+// Disable MSVC warnings that suggest making code non-portable.
+#pragma warning(disable : 4244)
+#pragma warning(disable : 4251)
+#pragma warning(disable : 4819)
+#pragma warning(disable : 4616)
+#pragma warning(disable : 2825)
+#endif
 
 typedef unsigned char byte;
 

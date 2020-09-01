@@ -196,6 +196,7 @@ class paramter_t
     //. stop immediately because timeout
     bool stop;
     void *user_ptr;
+    std::vector<std::pair<std::function<void()>, bool>> stop_listener;
 
   public:
     paramter_t()
@@ -207,8 +208,24 @@ class paramter_t
     int get_times() const { return times; }
     void set_user_ptr(void *ptr) { user_ptr = ptr; }
     void *get_user_ptr() const { return user_ptr; }
-    void stop_wait() { stop = true; }
+    void stop_wait()
+    {
+        stop = true;
+        for (auto &i : stop_listener)
+        {
+            if (i.second)
+                i.first();
+        }
+    }
+    int add_stop_wait_fn(std::function<void()> fn)
+    {
+        stop_listener.emplace_back(fn, true);
+        return (int)stop_listener.size() - 1;
+    }
+    void remove_stop_wait_fn(int idx) { stop_listener[idx].second = false; }
+
     void add_times() { times++; }
+    void clear_times() { times = 0; }
 };
 
 /// async wait
@@ -257,6 +274,40 @@ inline static auto await_timeout(microsecond_t span, Func func, Args &&... args)
         if (span == 0)
             param.stop_wait();
         param.add_times();
+    }
+}
+
+/// async wait
+///
+///\tparam func function to async wait
+///\tparam args function args request
+///\return return function result when async wait ok
+///\note All Func with coroutine tag is not reentrant. Don't wait for function calls with the same parameters at the
+/// same time.
+template <typename Func, typename... Args>
+inline static auto await_p(paramter_t &parent_param, Func func, Args &&... args)
+{
+    paramter_t param;
+    int idx = -1;
+    while (1)
+    {
+        auto ret = func(param, std::forward<Args>(args)...);
+        if (ret.is_finish())
+        {
+            if (idx >= 0)
+                parent_param.remove_stop_wait_fn(idx);
+            return ret();
+        }
+        if (param.get_times() == 0)
+        {
+            auto co = coroutine_t::current();
+            idx = parent_param.add_stop_wait_fn([co, &param]() {
+                param.stop_wait();
+                co->resume();
+            });
+        }
+        param.add_times();
+        coroutine_t::yield();
     }
 }
 
