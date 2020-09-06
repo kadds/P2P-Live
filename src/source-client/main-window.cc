@@ -179,7 +179,7 @@ void ffmpeg_logger(void *avcl, int level, const char *fmt, va_list vl)
         return;
     }
     char log_buffer[128];
-    log_buffer[vsnprintf(log_buffer, 127, fmt, vl)] = 0;
+    vsnprintf(log_buffer, 127, fmt, vl);
 
     if (level >= AV_LOG_WARNING)
     {

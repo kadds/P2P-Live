@@ -46,7 +46,7 @@ void thread_main(u64 sid, socket_addr_t ts_server_addr, microsecond_t timeout)
 
     tracker->on_tracker_server_connect([](tracker_node_client_t &c, socket_addr_t) {
         c.request_update_trackers();
-        c.request_update_nodes(2, request_strategy::edge_node);
+        c.request_update_nodes(2, RequestNodeStrategy::edge_nodes);
     });
 
     tracker->on_nodes_update([](tracker_node_client_t &c, peer_node_t *nodes, u64 count) {
@@ -57,7 +57,7 @@ void thread_main(u64 sid, socket_addr_t ts_server_addr, microsecond_t timeout)
                 if (error_handler(connection_state::connection_refuse))
                 {
                     event_loop_t::current().add_timer(make_timer(
-                        make_timespan(1), [&c]() { c.request_update_nodes(1, request_strategy::edge_node); }));
+                        make_timespan(1), [&c]() { c.request_update_nodes(1, RequestNodeStrategy::edge_nodes); }));
                 }
                 else
                 {
