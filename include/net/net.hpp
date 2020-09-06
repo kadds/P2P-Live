@@ -35,7 +35,7 @@ along with P2P-Live. If not, see <http: //www.gnu.org/licenses/>.
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
-#define WOULDBLOCK EAGIN
+#define WOULDBLOCK EAGAIN
 #else
 /// windows headers
 #define NOMINMAX
