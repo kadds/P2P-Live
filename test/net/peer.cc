@@ -139,6 +139,7 @@ TEST(PeerTest, TrackerPingPong)
         }
         ctx.exit_all(-1);
     }));
+    event_loop_t::current().add_timer(make_timer(net::make_timespan(3), [&ctx]() { ctx.exit_all(-1); }));
     ctx.run();
 }
 
