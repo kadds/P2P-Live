@@ -15,7 +15,7 @@ jobs:
     - name: install deps
       run: | 
         pacman -Syu --noconfirm
-        pacman -S --noconfirm make cmake gcc ffmpeg qt5-base gtest boost git gflags protobuf
+        pacman -S --noconfirm make cmake gcc ffmpeg qt5-base gtest boost git gflags protobuf openssh
         git clone git@github.com:google/glog.git
         cd glog
         cmake -H. -Bbuild -G "Unix Makefiles"
