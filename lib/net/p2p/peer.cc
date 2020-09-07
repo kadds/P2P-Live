@@ -69,7 +69,7 @@ void peer_t::send_fragments(fragment_id_t fid, socket_buffer_t buffer, rudp_conn
     auto pkg_len = pkg.ByteSizeLong();
     if (pkg_len > mtu)
     {
-        throw std::exception("length too large");
+        throw net_io_exception("length too large");
     }
     socket_buffer_t send_buffer(pkg_len);
     send_buffer.expect().origin_length();
@@ -87,7 +87,7 @@ void peer_t::send_fragments(fragment_id_t fid, socket_buffer_t buffer, rudp_conn
         pkg_len = pkg.ByteSizeLong();
         if (pkg_len > mtu)
         {
-            throw std::exception("length too large");
+            throw net_io_exception("length too large");
         }
         send_buffer.expect().length(pkg_len);
         pkg.SerializeWithCachedSizesToArray(send_buffer.get());

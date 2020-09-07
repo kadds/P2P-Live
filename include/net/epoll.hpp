@@ -29,6 +29,7 @@ namespace net
 class event_epoll_demultiplexer : public event_demultiplexer
 {
     int fd;
+    int ev_fd;
 
   public:
     event_epoll_demultiplexer();
@@ -36,6 +37,7 @@ class event_epoll_demultiplexer : public event_demultiplexer
     void add(handle_t handle, event_type_t type) override;
     handle_t select(event_type_t *type, microsecond_t *timeout) override;
     void remove(handle_t handle, event_type_t type) override;
+    void wake_up(event_loop_t &cur_loop) override;
 };
 } // namespace net
 #endif

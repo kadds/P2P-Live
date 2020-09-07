@@ -11,9 +11,15 @@ event_epoll_demultiplexer::event_epoll_demultiplexer()
     {
         throw net_param_exception("epoll create failed!");
     }
+    ev_fd = eventfd(1, 0);
+    add(ev_fd, event_type::readable);
 }
 
-event_epoll_demultiplexer::~event_epoll_demultiplexer() { close(fd); }
+event_epoll_demultiplexer::~event_epoll_demultiplexer()
+{
+    close(fd);
+    close(ev_fd);
+}
 
 void event_epoll_demultiplexer::add(handle_t handle, event_type_t type)
 {
@@ -66,6 +72,14 @@ handle_t event_epoll_demultiplexer::select(event_type_t *type, microsecond_t *ti
     {
         return 0;
     }
+    if (ev.data.fd == ev_fd)
+    {
+        eventfd_t vl;
+        eventfd_read(fd, &vl);
+        *timeout = 0;
+        return 0;
+    }
+
     return ev.data.fd;
 }
 
@@ -85,6 +99,8 @@ void event_epoll_demultiplexer::remove(handle_t handle, event_type_t type)
     ev.data.fd = handle;
     epoll_ctl(fd, EPOLL_CTL_DEL, handle, &ev);
 }
+
+void event_epoll_demultiplexer::wake_up(event_loop_t &cur_loop) { eventfd_write(ev_fd, 1); }
 
 } // namespace net
 

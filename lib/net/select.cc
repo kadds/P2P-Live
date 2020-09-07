@@ -11,7 +11,7 @@ event_select_demultiplexer::event_select_demultiplexer()
     add(fd, event_type::readable);
 }
 
-event_select_demultiplexer::~event_select_demultiplexer() {}
+event_select_demultiplexer::~event_select_demultiplexer() { close(fd); }
 
 /// XXX: the event will be available when call next 'select'. it must be in this thread, so the problem will not occur
 void event_select_demultiplexer::add(handle_t handle, event_type_t type)

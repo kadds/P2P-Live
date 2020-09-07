@@ -145,7 +145,7 @@ TEST(PeerTest, TrackerPingPong)
 
 TEST(PeerTest, TrackerNode)
 {
-    constexpr int test_count = 4;
+    constexpr int test_count = 5;
     event_context_t ctx(event_strategy::AUTO);
 
     tracker_server_t tserver1;
@@ -243,7 +243,7 @@ TEST(PeerTest, NATSend)
     std::unordered_map<socket_addr_t, peer_info_t *, peer_hash_func_t> remote_peers;
     std::unordered_map<socket_addr_t, peer_info_t *, peer_hash_func_t> remote_peers2;
 
-    int flags;
+    int flags = 0;
 
     peer_main(context, taddrs1, client, peer, flags, remote_peers);
     peer_main(context, taddrs1, client2, peer2, flags, remote_peers2);

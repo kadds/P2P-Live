@@ -50,7 +50,6 @@ co::async_result_t<io_result> set_head_and_send(co::paramter_t &param, E &head, 
     {
         if (ret() == io_result::ok)
         {
-            param.set_user_state(1);
             return ret;
         }
     }
